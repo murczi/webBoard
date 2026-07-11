@@ -1,0 +1,39 @@
+@model Dashboard.Application.Overview.DTOs.ModuleTileDto
+
+@{
+    var statusText = Model.IsEnabled
+        ? Model.Health.ToString()
+        : "Disabled";
+
+    var statusClass = statusText.ToLowerInvariant();
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.ManagementUrl))
+{
+    <a class="module-tile"
+       href="@Model.ManagementUrl"
+       target="_blank"
+       rel="noopener noreferrer"
+       aria-label="@($"{Model.Name}: {statusText}")">
+
+        <span class="module-tile__name">@Model.Name</span>
+
+        <span class="module-tile__status">
+            <span class="status-dot status-dot--@statusClass"></span>
+            <span>@statusText</span>
+        </span>
+    </a>
+}
+else
+{
+    <div class="module-tile"
+         aria-label="@($"{Model.Name}: {statusText}")">
+
+        <span class="module-tile__name">@Model.Name</span>
+
+        <span class="module-tile__status">
+            <span class="status-dot status-dot--@statusClass"></span>
+            <span>@statusText</span>
+        </span>
+    </div>
+}

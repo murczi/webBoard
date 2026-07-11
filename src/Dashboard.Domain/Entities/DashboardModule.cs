@@ -21,6 +21,8 @@ public sealed class DashboardModule
     public string? ManagementUrl { get; set; }
 
     public bool IsEnabled { get; set; } = true;
+    
+    public bool ShowOnOverview { get; set; } = true;
 
     public int SortOrder { get; set; }
 

@@ -32,7 +32,10 @@ public sealed class DashboardModuleConfiguration
 
         builder.Property(module => module.ManagementUrl)
             .HasMaxLength(2048);
-
+        
+        builder.Property(module => module.ShowOnOverview)
+            .HasDefaultValue(true);
+        
         builder.HasIndex(module => new
         {
             module.ManagedHostId,

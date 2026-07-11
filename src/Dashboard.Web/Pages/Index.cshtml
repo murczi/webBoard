@@ -1,10 +1,54 @@
 ﻿@page
 @model IndexModel
+
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = "Overview";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="overview-header">
+    <h1>Overview</h1>
+
+    <div class="btn-group"
+         role="group"
+         aria-label="Dashboard grouping">
+
+        <a asp-page="/Index"
+           asp-route-groupBy="host"
+           class="btn btn-sm @(Model.GroupBy == "host"
+                                 ? "btn-primary"
+                                 : "btn-outline-secondary")">
+            By host
+        </a>
+
+        <a asp-page="/Index"
+           asp-route-groupBy="type"
+           class="btn btn-sm @(Model.GroupBy == "type"
+                                 ? "btn-primary"
+                                 : "btn-outline-secondary")">
+            By type
+        </a>
+    </div>
 </div>
+
+@if (Model.Groups.Count == 0)
+{
+    <div class="overview-empty">
+        No services have been selected for the overview.
+    </div>
+}
+else
+{
+    @foreach (var group in Model.Groups)
+    {
+        <section class="module-group">
+            <h2 class="module-group__title">@group.Name</h2>
+
+            <div class="module-grid">
+                @foreach (var module in group.Modules)
+                {
+                    <partial name="_ModuleTile" model="module"/>
+                }
+            </div>
+        </section>
+    }
+}

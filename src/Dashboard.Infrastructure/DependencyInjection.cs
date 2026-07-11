@@ -1,4 +1,6 @@
+using Dashboard.Application.Overview.Interfaces;
 using Dashboard.Infrastructure.Persistence;
+using Dashboard.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +14,8 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         var connectionString =
-            configuration.GetConnectionString("DashboardDatabase");
+            configuration.GetConnectionString(
+                "DashboardDatabase");
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -22,6 +25,10 @@ public static class DependencyInjection
 
         services.AddDbContext<DashboardDbContext>(options =>
             options.UseNpgsql(connectionString));
+
+        services.AddScoped<
+            IDashboardModuleRepository,
+            DashboardModuleRepository>();
 
         return services;
     }
