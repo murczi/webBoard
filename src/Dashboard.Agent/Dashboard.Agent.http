@@ -1,6 +1,0 @@
-@Dashboard.Agent_HostAddress = http://localhost:5171
-
-GET {{Dashboard.Agent_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
