@@ -1,0 +1,11 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/Webboard.Domain.Model/Webboard.Domain.Model.csproj"/>
+        <Project Path="src/Webboard.Domain.Test/Webboard.Domain.Test.csproj"/>
+        <Project Path="src/Webboard.Domain/Webboard.Domain.csproj"/>
+        <Project Path="src/Webboard.Infrastructure.Configuration/Webboard.Infrastructure.Configuration.csproj"/>
+        <Project Path="src/Webboard.Infrastructure.Test/Webboard.Infrastructure.Test.csproj"/>
+        <Project Path="src/Webboard.Infrastructure/Webboard.Infrastructure.csproj"/>
+        <Project Path="src/Webboard.Web/Webboard.Web.csproj"/>
+    </Folder>
+</Solution>
