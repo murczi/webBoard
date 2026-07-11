@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dashboard.Agent\Dashboard.Agent.csproj" />
-    <ProjectReference Include="..\..\src\Dashboard.Contracts\Dashboard.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Dashboard.Domain\Dashboard.Domain.csproj" />
   </ItemGroup>
 
 </Project>

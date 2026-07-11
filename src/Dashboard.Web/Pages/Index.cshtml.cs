@@ -1,5 +1,5 @@
-using Dashboard.Application.Overview.DTOs;
-using Dashboard.Application.Overview.Interfaces;
+using Dashboard.Domain.Overview.Models;
+using Dashboard.Domain.Overview.Interfaces;
 using Dashboard.Domain.Modules;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -34,7 +34,7 @@ public class IndexModel(
     }
 
     private static IReadOnlyList<ModuleTileGroup> GroupByHost(
-        IReadOnlyList<ModuleTileDto> tiles)
+        IReadOnlyList<ModuleTileModel> tiles)
     {
         return tiles
             .GroupBy(tile => tile.ManagedHostName ?? "Unassigned")
@@ -50,7 +50,7 @@ public class IndexModel(
     }
 
     private static IReadOnlyList<ModuleTileGroup> GroupByType(
-        IReadOnlyList<ModuleTileDto> tiles)
+        IReadOnlyList<ModuleTileModel> tiles)
     {
         return tiles
             .GroupBy(tile => tile.Type)
@@ -78,5 +78,5 @@ public class IndexModel(
 
     public sealed record ModuleTileGroup(
         string Name,
-        IReadOnlyList<ModuleTileDto> Modules);
+        IReadOnlyList<ModuleTileModel> Modules);
 }

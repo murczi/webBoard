@@ -1,4 +1,4 @@
-using Dashboard.Application.Overview.Interfaces;
+using Dashboard.Domain.Overview.Interfaces;
 using Dashboard.Infrastructure.Persistence;
 using Dashboard.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;

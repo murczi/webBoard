@@ -1,6 +1,6 @@
 using Dashboard.Domain.Entities;
 
-namespace Dashboard.Application.Overview.Interfaces;
+namespace Dashboard.Domain.Overview.Interfaces;
 
 public interface IDashboardModuleRepository
 {
