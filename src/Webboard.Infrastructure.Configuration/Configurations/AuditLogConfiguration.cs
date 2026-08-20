@@ -10,17 +10,31 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
 
         builder.HasKey(keyExpression: log => log.Id);
 
-        builder.Property(propertyExpression: log => log.AuditComment)
+        builder.HasOne(navigationExpression: log => log.Actor)
+               .WithMany(navigationExpression: user => user.AuditLogsAsActor)
+               .HasForeignKey(foreignKeyExpression: log => log.ActorId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(propertyExpression: log => log.Comment)
                .IsRequired()
                .HasMaxLength(maxLength: 100);
-
-        builder.HasIndex(indexExpression: log => log.DateCreated);
-
-        builder.HasIndex(indexExpression: log => log.ModuleId);
 
         builder.HasOne(navigationExpression: log => log.Module)
                .WithMany(navigationExpression: module => module.AuditLogs)
                .HasForeignKey(foreignKeyExpression: log => log.ModuleId)
-               .OnDelete(DeleteBehavior.SetNull);
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(navigationExpression: log => log.Host)
+               .WithMany(navigationExpression: host => host.AuditLogs)
+               .HasForeignKey(foreignKeyExpression: log => log.HostId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(navigationExpression: log => log.User)
+               .WithMany(navigationExpression: user => user.AuditLogsAsTarget)
+               .HasForeignKey(foreignKeyExpression: log => log.UserId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(indexExpression: log => log.DateCreated);
+
     }
 }
