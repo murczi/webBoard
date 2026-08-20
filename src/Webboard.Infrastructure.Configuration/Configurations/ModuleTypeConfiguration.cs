@@ -13,14 +13,14 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
         builder.Property(propertyExpression: type => type.Description)
                .HasMaxLength(maxLength: 128);
 
-        builder.Property(propertyExpression: type => type.Type)
+        builder.Property(propertyExpression: type => type.Name)
                .HasMaxLength(maxLength: 64);
 
         builder.HasData(
         new ModuleTypeEntity
         {
             Id = 1,
-            Type = "Http",
+            Name = "Http",
             Description = "Http Module"
         }
         );

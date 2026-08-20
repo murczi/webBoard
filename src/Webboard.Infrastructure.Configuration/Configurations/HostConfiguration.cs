@@ -4,9 +4,9 @@ using Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-public class ManagedHostConfiguration : IEntityTypeConfiguration<ManagedHostEntity> {
-    public void Configure(EntityTypeBuilder<ManagedHostEntity> builder) {
-        builder.ToTable("ManagedHosts");
+public class HostConfiguration : IEntityTypeConfiguration<HostEntity> {
+    public void Configure(EntityTypeBuilder<HostEntity> builder) {
+        builder.ToTable("Hosts");
 
         builder.HasKey(keyExpression: host => host.Id);
 
@@ -22,8 +22,8 @@ public class ManagedHostConfiguration : IEntityTypeConfiguration<ManagedHostEnti
                .IsUnique();
 
         builder.HasMany(navigationExpression: host => host.Modules)
-               .WithOne(navigationExpression: module => module.ManagedHost)
-               .HasForeignKey(foreignKeyExpression: module => module.ManagedHostId)
+               .WithOne(navigationExpression: module => module.Host)
+               .HasForeignKey(foreignKeyExpression: module => module.HostId)
                .OnDelete(DeleteBehavior.Restrict);
     }
 }
