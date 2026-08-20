@@ -5,6 +5,8 @@ public class ModuleEntity {
 
     public int? ManagedHostId { get; set; }
 
+    public int ModuleTypeId { get; set; }
+
     public required string Name { get; set; }
 
     public string? Description { get; set; }

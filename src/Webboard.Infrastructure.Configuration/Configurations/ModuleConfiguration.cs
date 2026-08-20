@@ -19,7 +19,7 @@ public class ModuleConfiguration : IEntityTypeConfiguration<ModuleEntity> {
 
         builder.HasOne(navigationExpression: module => module.Type)
                .WithMany()
-               .HasForeignKey(foreignKeyExpression: module => module.Id)
+               .HasForeignKey(foreignKeyExpression: module => module.ModuleTypeId)
                .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(propertyExpression: module => module.TargetIdentifier)
