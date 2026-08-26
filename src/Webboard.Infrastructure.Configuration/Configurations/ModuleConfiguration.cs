@@ -33,6 +33,9 @@ public class ModuleConfiguration : IEntityTypeConfiguration<ModuleEntity> {
         builder.Property(propertyExpression: module => module.ContainerId)
                .HasMaxLength(maxLength: 128);
 
+        builder.Property(propertyExpression: module => module.ServiceName)
+               .HasMaxLength(maxLength: 256);
+
         builder.Property(propertyExpression: module => module.ManagementUrl)
                .HasMaxLength(maxLength: 2048);
 

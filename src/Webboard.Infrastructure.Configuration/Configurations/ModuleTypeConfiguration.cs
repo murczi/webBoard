@@ -28,6 +28,12 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
                 Id = 2,
                 Name = "Docker",
                 Description = "Docker container"
+            },
+            new ModuleTypeEntity
+            {
+                Id = 3,
+                Name = "Systemd",
+                Description = "systemd service"
             });
     }
 }

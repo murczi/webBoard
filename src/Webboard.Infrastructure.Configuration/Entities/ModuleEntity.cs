@@ -15,6 +15,8 @@ public class ModuleEntity {
 
     public string? ContainerId { get; set; }
 
+    public string? ServiceName { get; set; }
+
     public string? ManagementUrl { get; set; }
 
     public bool DeletionFlag { get; set; }

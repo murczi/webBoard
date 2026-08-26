@@ -13,6 +13,11 @@ RUN dotnet publish src/WebBoard.Agent/WebBoard.Agent.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends systemd \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 

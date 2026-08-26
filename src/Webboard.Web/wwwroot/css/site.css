@@ -203,6 +203,36 @@ body {
     line-height: 1;
 }
 
+.searchable-select-search {
+    border-radius: .5rem;
+    box-shadow: 0 .2rem .65rem rgba(31, 42, 68, .07);
+}
+
+.searchable-select-search .input-group-text:first-child {
+    color: #1b6ec2;
+    background: #eef5fd;
+    border-color: #cbdcf0;
+}
+
+.searchable-select-search .form-control {
+    border-color: #cbdcf0;
+}
+
+.search-result-count {
+    min-width: 4.5rem;
+    justify-content: center;
+    color: #687386;
+    background: #f8f9fb;
+    border-color: #cbdcf0;
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.search-result-count--active {
+    color: #0d6efd;
+    background: #eef5fd;
+}
+
 .user-table-responsive {
     overflow: visible;
 }

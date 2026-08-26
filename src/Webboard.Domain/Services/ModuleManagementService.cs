@@ -70,6 +70,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
 
         if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
             module.HealthCheckUrl = null;
+            module.ServiceName = null;
             module.ContainerId = EmptyToNull(module.ContainerId);
             if (!module.HostId.HasValue)
                 throw new ArgumentException("Select a host for a Docker module.", nameof(module));
@@ -78,14 +79,32 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
             if (module.ContainerId.Length > 128)
                 throw new ArgumentException("Docker container ID cannot exceed 128 characters.", nameof(module));
         }
+        else if (string.Equals(typeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
+            module.HealthCheckUrl = null;
+            module.ContainerId = null;
+            module.ServiceName = EmptyToNull(module.ServiceName);
+            if (!module.HostId.HasValue)
+                throw new ArgumentException("Select a host for a systemd module.", nameof(module));
+            if (module.ServiceName is null)
+                throw new ArgumentException("Select a systemd service.", nameof(module));
+            if (!IsValidSystemdServiceName(module.ServiceName))
+                throw new ArgumentException("Select a valid systemd service.", nameof(module));
+        }
         else {
             module.HealthCheckUrl = NormalizeOptionalUrl(module.HealthCheckUrl, "Health-check URL");
             module.ContainerId = null;
+            module.ServiceName = null;
         }
     }
 
     private static string? EmptyToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool IsValidSystemdServiceName(string value) =>
+        value.Length <= 256 &&
+        value.EndsWith(".service", StringComparison.OrdinalIgnoreCase) &&
+        value.All(character => char.IsAsciiLetterOrDigit(character) ||
+            character is '_' or '.' or '@' or ':' or '\\' or '-');
 
     private static string? NormalizeOptionalUrl(string? value, string label) {
         var candidate = EmptyToNull(value);

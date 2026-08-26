@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddSingleton<DockerSocketClient>();
+builder.Services.AddSingleton<SystemdClient>();
 
 var app = builder.Build();
 
@@ -62,5 +63,47 @@ app.MapGet("/docker/containers/{containerId}/status", async (
 })
    .WithName("GetDockerContainerStatus")
    .WithTags("Docker");
+
+app.MapGet("/systemd/services", async (
+        SystemdClient systemd,
+        CancellationToken cancellationToken) => {
+    try {
+        return Results.Ok(await systemd.GetServicesAsync(cancellationToken));
+    }
+    catch (InvalidOperationException exception) {
+        return Results.Problem(
+            exception.Message,
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+        return Results.Problem(
+            "The systemd request timed out.",
+            statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+})
+   .WithName("GetSystemdServices")
+   .WithTags("systemd");
+
+app.MapGet("/systemd/services/{serviceName}/status", async (
+        string serviceName,
+        SystemdClient systemd,
+        CancellationToken cancellationToken) => {
+    try {
+        var status = await systemd.GetServiceStatusAsync(serviceName, cancellationToken);
+        return status is null ? Results.NotFound() : Results.Ok(status);
+    }
+    catch (InvalidOperationException exception) {
+        return Results.Problem(
+            exception.Message,
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+        return Results.Problem(
+            "The systemd request timed out.",
+            statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+})
+   .WithName("GetSystemdServiceStatus")
+   .WithTags("systemd");
 
 app.Run();

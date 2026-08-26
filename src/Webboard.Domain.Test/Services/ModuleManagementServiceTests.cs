@@ -87,6 +87,60 @@ public class ModuleManagementServiceTests {
         Assert.Contains("host", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task AddAsync_ConfiguresSystemdServiceInsteadOfHealthUrl() {
+        var repository = new FakeModuleRepository
+        {
+            ValidTypeId = 3,
+            ValidTypeName = "Systemd",
+            ValidHostId = 4
+        };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 3;
+        module.HostId = 4;
+        module.ServiceName = "nginx.service";
+
+        await service.AddAsync(module, 1, "Test change");
+
+        Assert.Equal("nginx.service", module.ServiceName);
+        Assert.Null(module.HealthCheckUrl);
+        Assert.Null(module.ContainerId);
+    }
+
+    [Fact]
+    public async Task AddAsync_RequiresHostAndServiceForSystemdModule() {
+        var repository = new FakeModuleRepository { ValidTypeId = 3, ValidTypeName = "Systemd" };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 3;
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
+
+        Assert.Contains("host", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AddAsync_RejectsInvalidSystemdServiceName() {
+        var repository = new FakeModuleRepository
+        {
+            ValidTypeId = 3,
+            ValidTypeName = "Systemd",
+            ValidHostId = 4
+        };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 3;
+        module.HostId = 4;
+        module.ServiceName = "nginx.service --now";
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
+
+        Assert.Contains("valid systemd service", exception.Message);
+    }
+
     [Theory]
     [InlineData("ftp://example.test/health")]
     [InlineData("/relative/health")]

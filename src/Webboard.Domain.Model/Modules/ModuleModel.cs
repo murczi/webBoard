@@ -11,6 +11,7 @@ public class ModuleModel {
     public string? Description { get; set; }
     public string? HealthCheckUrl { get; set; }
     public string? ContainerId { get; set; }
+    public string? ServiceName { get; set; }
     public string? ManagementUrl { get; set; }
     public bool IsEnabled { get; set; }
     public DateTimeOffset DateCreated { get; set; }

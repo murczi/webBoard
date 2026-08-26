@@ -16,6 +16,7 @@ public class IndexModel(
     IModuleHealthChecker healthChecker,
     IHostManagementService hosts,
     IDockerAgentClient dockerAgent,
+    ISystemdAgentClient systemdAgent,
     IAuditLogService auditLogs,
     JwtSessionService sessions) : PageModel {
     public IReadOnlyList<ModuleTileModel> ModuleTiles { get; private set; } = [];
@@ -183,6 +184,33 @@ public class IndexModel(
         }
     }
 
+    public async Task<IActionResult> OnGetServicesAsync(
+        int hostId,
+        CancellationToken cancellationToken = default) {
+        if (!CanCreate && !CanUpdate)
+            return Forbid();
+
+        var host = (await hosts.GetAllAsync(cancellationToken))
+            .SingleOrDefault(candidate => candidate.Id == hostId && candidate.IsEnabled);
+        if (host is null)
+            return NotFound(new { error = "The selected host was not found or is disabled." });
+
+        try {
+            return new JsonResult(await systemdAgent.GetServicesAsync(
+                host.AgentBaseUrl,
+                cancellationToken));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+            return StatusCode(504, new { error = "The systemd service request timed out." });
+        }
+        catch (HttpRequestException exception) {
+            return StatusCode(502, new
+            {
+                error = $"The host agent could not read systemd services: {exception.Message}"
+            });
+        }
+    }
+
     private bool IsValidAuditComment() {
         if (!string.IsNullOrWhiteSpace(AuditComment) &&
             AuditComment.Trim().Length <= AuditLogModel.MaxCommentLength)
@@ -241,6 +269,10 @@ public class IndexModel(
         [Display(Name = "Docker container")]
         public string? ContainerId { get; set; }
 
+        [StringLength(256)]
+        [Display(Name = "systemd service")]
+        public string? ServiceName { get; set; }
+
         [StringLength(2048), Url]
         [Display(Name = "Management URL")]
         public string? ManagementUrl { get; set; }
@@ -257,6 +289,7 @@ public class IndexModel(
             TypeId = TypeId,
             HealthCheckUrl = HealthCheckUrl,
             ContainerId = ContainerId,
+            ServiceName = ServiceName,
             ManagementUrl = ManagementUrl,
             IsEnabled = IsEnabled
         };

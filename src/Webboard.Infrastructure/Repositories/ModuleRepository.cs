@@ -23,6 +23,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                 Description = module.Description,
                 HealthCheckUrl = module.HealthCheckUrl,
                 ContainerId = module.ContainerId,
+                ServiceName = module.ServiceName,
                 ManagementUrl = module.ManagementUrl,
                 IsEnabled = module.IsEnabled,
                 DateCreated = module.DateCreated,
@@ -65,6 +66,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             Description = module.Description,
             HealthCheckUrl = module.HealthCheckUrl,
             ContainerId = module.ContainerId,
+            ServiceName = module.ServiceName,
             ManagementUrl = module.ManagementUrl,
             DeletionFlag = false,
             IsEnabled = module.IsEnabled,
@@ -100,6 +102,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(entity => entity.Description, module.Description)
                     .SetProperty(entity => entity.HealthCheckUrl, module.HealthCheckUrl)
                     .SetProperty(entity => entity.ContainerId, module.ContainerId)
+                    .SetProperty(entity => entity.ServiceName, module.ServiceName)
                     .SetProperty(entity => entity.ManagementUrl, module.ManagementUrl)
                     .SetProperty(entity => entity.IsEnabled, module.IsEnabled)
                     .SetProperty(entity => entity.DateUpdated, module.DateUpdated),

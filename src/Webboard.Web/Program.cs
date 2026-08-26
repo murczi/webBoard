@@ -44,6 +44,9 @@ builder.Services
     .AddHttpClient<IDockerAgentClient, Webboard.Web.Services.DockerAgentClient>(client =>
         client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services
+    .AddHttpClient<ISystemdAgentClient, Webboard.Web.Services.SystemdAgentClient>(client =>
+        client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services
     .AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client =>
         client.Timeout = TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler

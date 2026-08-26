@@ -6,7 +6,8 @@ using Domain.Model.Modules;
 
 public sealed class HttpModuleHealthChecker(
     HttpClient httpClient,
-    IDockerAgentClient dockerAgent) : IModuleHealthChecker {
+    IDockerAgentClient dockerAgent,
+    ISystemdAgentClient systemdAgent) : IModuleHealthChecker {
     public async Task<ModuleHealthResult> CheckAsync(
         ModuleModel module,
         CancellationToken cancellationToken = default) {
@@ -20,6 +21,19 @@ public sealed class HttpModuleHealthChecker(
             return await dockerAgent.CheckContainerAsync(
                 module.HostAgentBaseUrl,
                 module.ContainerId,
+                cancellationToken);
+        }
+
+        if (string.Equals(module.TypeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
+            if (string.IsNullOrWhiteSpace(module.HostAgentBaseUrl) ||
+                string.IsNullOrWhiteSpace(module.ServiceName))
+                return new ModuleHealthResult(
+                    ModuleHealthState.NotConfigured,
+                    null,
+                    "systemd host or service is not configured");
+            return await systemdAgent.CheckServiceAsync(
+                module.HostAgentBaseUrl,
+                module.ServiceName,
                 cancellationToken);
         }
 

@@ -65,7 +65,10 @@ else {
                         <div class="module-health flex-shrink-0" title="@tile.Health.Message">
                             <span class="module-health-dot @dotClass" aria-hidden="true"></span>
                             <span class="small fw-semibold">
-                                @if (tile.Health.PingMilliseconds.HasValue) {
+                                @if (string.Equals(tile.Module.TypeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
+                                    @tile.Health.Message
+                                }
+                                else if (tile.Health.PingMilliseconds.HasValue) {
                                     @($"{tile.Health.PingMilliseconds} ms")
                                 }
                                 else if (tile.Health.State == ModuleHealthState.NotConfigured) {
@@ -112,6 +115,7 @@ else {
                                                         data-module-type-id="@tile.Module.TypeId"
                                                         data-module-health-url="@tile.Module.HealthCheckUrl"
                                                         data-module-container-id="@tile.Module.ContainerId"
+                                                        data-module-service-name="@tile.Module.ServiceName"
                                                         data-module-management-url="@tile.Module.ManagementUrl"
                                                         data-module-enabled="true">Edit module</button>
                                             </li>
@@ -187,6 +191,7 @@ else {
                                                     data-module-type-id="@module.TypeId"
                                                     data-module-health-url="@module.HealthCheckUrl"
                                                     data-module-container-id="@module.ContainerId"
+                                                    data-module-service-name="@module.ServiceName"
                                                     data-module-management-url="@module.ManagementUrl"
                                                     data-module-enabled="false">Edit module</button>
                                         </li>
@@ -246,6 +251,12 @@ else {
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="Module.HostId" class="form-label"></label>
+                                <div class="input-group input-group-sm searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search hosts…"
+                                           aria-label="Search hosts" data-search-select="Module_HostId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_HostId"></span>
+                                </div>
                                 <select asp-for="Module.HostId" class="form-select">
                                     <option value="">No host (HTTP/S site)</option>
                                     @foreach (var host in Model.Hosts) {
@@ -255,6 +266,12 @@ else {
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="Module.TypeId" class="form-label"></label>
+                                <div class="input-group input-group-sm searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search module types…"
+                                           aria-label="Search module types" data-search-select="Module_TypeId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_TypeId"></span>
+                                </div>
                                 <select asp-for="Module.TypeId" class="form-select" required>
                                     @foreach (var type in Model.Types) {
                                         <option value="@type.Id" data-type-name="@type.Name">@type.Name</option>
@@ -269,11 +286,32 @@ else {
                             </div>
                             <div class="col-12 d-none" id="module-container-field">
                                 <label asp-for="Module.ContainerId" class="form-label"></label>
+                                <div class="input-group searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search containers by name, image, or status…"
+                                           aria-label="Search Docker containers" data-search-select="Module_ContainerId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_ContainerId"></span>
+                                </div>
                                 <select asp-for="Module.ContainerId" class="form-select" disabled>
                                     <option value="">Select a host to load containers</option>
                                 </select>
                                 <div class="form-text" id="module-container-help">
                                     Containers are loaded live from the selected host's agent.
+                                </div>
+                            </div>
+                            <div class="col-12 d-none" id="module-service-field">
+                                <label asp-for="Module.ServiceName" class="form-label"></label>
+                                <div class="input-group searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search services by unit, description, or status…"
+                                           aria-label="Search systemd services" data-search-select="Module_ServiceName"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_ServiceName"></span>
+                                </div>
+                                <select asp-for="Module.ServiceName" class="form-select" disabled>
+                                    <option value="">Select a host to load services</option>
+                                </select>
+                                <div class="form-text" id="module-service-help">
+                                    Services are loaded live from the selected host's agent.
                                 </div>
                             </div>
                             <div class="col-12">
@@ -331,21 +369,50 @@ else {
             const containerField = document.getElementById('module-container-field');
             const container = document.getElementById('Module_ContainerId');
             const containerHelp = document.getElementById('module-container-help');
+            const serviceField = document.getElementById('module-service-field');
+            const service = document.getElementById('Module_ServiceName');
+            const serviceHelp = document.getElementById('module-service-help');
             const managementUrl = document.getElementById('Module_ManagementUrl');
             const enabled = document.getElementById('Module_IsEnabled');
             const auditCommentField = document.getElementById('module-audit-comment-field');
             const auditComment = document.getElementById('module-audit-comment');
             const saveButton = document.getElementById('save-module');
             const containersUrl = '@Url.Page("/Index", "Containers")';
+            const servicesUrl = '@Url.Page("/Index", "Services")';
 
             const isDockerType = () =>
                 type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'docker';
+            const isSystemdType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'systemd';
+
+            const updateSearch = selectId => {
+                const select = document.getElementById(selectId);
+                const search = form.querySelector(`[data-search-select="${selectId}"]`);
+                const count = form.querySelector(`[data-search-count="${selectId}"]`);
+                if (!select || !search || !count) return;
+                const query = search.value.trim().toLocaleLowerCase();
+                const options = [...select.options].filter(option => option.value);
+                let visible = 0;
+                options.forEach(option => {
+                    const matches = !query || option.text.toLocaleLowerCase().includes(query) || option.selected;
+                    option.hidden = !matches;
+                    if (matches) visible++;
+                });
+                count.textContent = query ? `${visible} found` : `${options.length} total`;
+                count.classList.toggle('search-result-count--active', Boolean(query));
+            };
+
+            form.querySelectorAll('[data-search-select]').forEach(search => {
+                search.addEventListener('input', () => updateSearch(search.dataset.searchSelect));
+                updateSearch(search.dataset.searchSelect);
+            });
 
             const setContainerPlaceholder = (message, selectedContainerId = '') => {
                 container.replaceChildren();
                 const option = new Option(message, selectedContainerId);
                 option.selected = true;
                 container.add(option);
+                updateSearch('Module_ContainerId');
             };
 
             const loadContainers = async (selectedContainerId = '') => {
@@ -375,6 +442,7 @@ else {
                     containerHelp.textContent = containers.length
                         ? 'Containers loaded live from the selected host.'
                         : 'No Docker containers were found on this host.';
+                    updateSearch('Module_ContainerId');
                 }
                 catch {
                     setContainerPlaceholder('Unable to load containers', selectedContainerId);
@@ -383,19 +451,81 @@ else {
                 }
             };
 
-            const syncModuleTypeFields = async (selectedContainerId = '') => {
+            const setServicePlaceholder = (message, selectedServiceName = '') => {
+                service.replaceChildren();
+                const option = new Option(message, selectedServiceName);
+                option.selected = true;
+                service.add(option);
+                updateSearch('Module_ServiceName');
+            };
+
+            const loadServices = async (selectedServiceName = '') => {
+                if (!host.value) {
+                    setServicePlaceholder('Select a host to load services', selectedServiceName);
+                    service.disabled = true;
+                    serviceHelp.textContent = 'A host with a systemd-enabled agent is required.';
+                    return;
+                }
+
+                setServicePlaceholder('Loading services…');
+                service.disabled = true;
+                serviceHelp.textContent = 'Discovering systemd services live on the selected host…';
+                try {
+                    const response = await fetch(`${servicesUrl}&hostId=${encodeURIComponent(host.value)}`);
+                    if (!response.ok) {
+                        const problem = await response.json().catch(() => null);
+                        throw new Error(problem?.error ?? 'Service request failed.');
+                    }
+                    const services = await response.json();
+                    service.replaceChildren(new Option('Select a service', ''));
+                    services.forEach(item => {
+                        const label = `${item.name} — ${item.description} (${item.activeState}/${item.subState})`;
+                        service.add(new Option(label, item.name));
+                    });
+                    if (selectedServiceName && !services.some(item => item.name === selectedServiceName))
+                        service.add(new Option('Previously selected service (not currently found)', selectedServiceName));
+                    service.value = selectedServiceName;
+                    service.disabled = false;
+                    serviceHelp.textContent = services.length
+                        ? 'Services loaded live from the selected host. Search by unit, description, or status.'
+                        : 'No systemd services were found on this host.';
+                    updateSearch('Module_ServiceName');
+                }
+                catch (error) {
+                    setServicePlaceholder('Unable to load services', selectedServiceName);
+                    service.disabled = false;
+                    serviceHelp.textContent = error instanceof Error
+                        ? error.message
+                        : 'The host agent could not load systemd services. Check systemd access.';
+                }
+            };
+
+            const syncModuleTypeFields = async (selectedContainerId = '', selectedServiceName = '') => {
                 const docker = isDockerType();
-                healthUrlField.classList.toggle('d-none', docker);
-                healthUrl.disabled = docker;
+                const systemd = isSystemdType();
+                healthUrlField.classList.toggle('d-none', docker || systemd);
+                healthUrl.disabled = docker || systemd;
                 containerField.classList.toggle('d-none', !docker);
                 container.required = docker;
+                serviceField.classList.toggle('d-none', !systemd);
+                service.required = systemd;
                 if (docker) {
                     healthUrl.value = '';
+                    service.disabled = true;
+                    service.value = '';
                     await loadContainers(selectedContainerId);
+                }
+                else if (systemd) {
+                    healthUrl.value = '';
+                    container.disabled = true;
+                    container.value = '';
+                    await loadServices(selectedServiceName);
                 }
                 else {
                     container.disabled = true;
                     container.value = '';
+                    service.disabled = true;
+                    service.value = '';
                 }
             };
 
@@ -415,7 +545,10 @@ else {
                 title.textContent = 'Add module';
                 saveButton.textContent = 'Add module';
                 setAuditCommentRequired(false);
+                form.querySelectorAll('[data-search-select]').forEach(search => search.value = '');
                 void syncModuleTypeFields();
+                updateSearch('Module_HostId');
+                updateSearch('Module_TypeId');
             });
 
             document.querySelectorAll('.js-edit-module').forEach(button => {
@@ -432,13 +565,19 @@ else {
                     title.textContent = 'Edit module';
                     saveButton.textContent = 'Save changes';
                     setAuditCommentRequired(true);
-                    void syncModuleTypeFields(button.dataset.moduleContainerId ?? '');
+                    form.querySelectorAll('[data-search-select]').forEach(search => search.value = '');
+                    ['Module_HostId', 'Module_TypeId', 'Module_ContainerId', 'Module_ServiceName']
+                        .forEach(updateSearch);
+                    void syncModuleTypeFields(
+                        button.dataset.moduleContainerId ?? '',
+                        button.dataset.moduleServiceName ?? '');
                 });
             });
 
             type.addEventListener('change', () => void syncModuleTypeFields());
             host.addEventListener('change', () => {
                 if (isDockerType()) void loadContainers();
+                if (isSystemdType()) void loadServices();
             });
 
             form.addEventListener('submit', () => {
@@ -446,6 +585,8 @@ else {
                 // Docker selection is posted even if a container refresh just completed.
                 if (isDockerType() && container.value)
                     container.disabled = false;
+                if (isSystemdType() && service.value)
+                    service.disabled = false;
                 saveButton.disabled = true;
                 saveButton.textContent = 'Saving…';
             });
