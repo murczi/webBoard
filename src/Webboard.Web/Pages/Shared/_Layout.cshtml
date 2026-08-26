@@ -24,6 +24,11 @@
                     <li class="nav-item">
                         <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
                     </li>
+                    @if (User.Identity?.IsAuthenticated == true) {
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-page="/UserManagement">Users</a>
+                        </li>
+                    }
                 </ul>
                 @if (User.Identity?.IsAuthenticated == true) {
                     <div class="d-flex align-items-center gap-3">
@@ -37,7 +42,7 @@
         </div>
     </nav>
 </header>
-<div class="container">
+<div class="@(ViewData["FullWidth"] as bool? == true ? "container-fluid px-3 px-lg-4" : "container")">
     <main role="main" class="pb-3">
         @RenderBody()
     </main>

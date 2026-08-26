@@ -28,6 +28,17 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             user => user.Id == userId && !user.DeletionFlag,
             cancellationToken);
 
+    public async Task<bool> DeleteUserAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.Users
+            .Where(user => user.Id == userId && !user.DeletionFlag)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.DeletionFlag, true)
+                    .SetProperty(user => user.DateUpdated, DateTime.UtcNow),
+                cancellationToken) > 0;
+
     public async Task<IReadOnlyList<UserCrudAccessModel>> GetByUserIdAsync(
         int userId,
         CancellationToken cancellationToken = default) =>

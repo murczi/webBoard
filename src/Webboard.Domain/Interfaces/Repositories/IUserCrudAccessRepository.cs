@@ -10,6 +10,10 @@ public interface IUserCrudAccessRepository {
         int userId,
         CancellationToken cancellationToken = default);
 
+    Task<bool> DeleteUserAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<UserCrudAccessModel>> GetByUserIdAsync(
         int userId,
         CancellationToken cancellationToken = default);

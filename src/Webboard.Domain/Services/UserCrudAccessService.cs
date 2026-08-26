@@ -20,6 +20,11 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         CancellationToken cancellationToken = default) =>
         repository.GetUsersAsync(cancellationToken);
 
+    public Task<bool> DeleteUserAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        repository.DeleteUserAsync(userId, cancellationToken);
+
     public async Task<IReadOnlyList<UserCrudAccessModel>> GetAccessAsync(
         int userId,
         CancellationToken cancellationToken = default) {

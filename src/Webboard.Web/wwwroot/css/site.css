@@ -77,6 +77,66 @@ body {
     text-align: center;
 }
 
+.user-list-card {
+    border-radius: 1rem;
+}
+
+.user-table-responsive {
+    overflow: visible;
+}
+
+.user-list-card thead th {
+    padding: 1rem 1.25rem;
+    border-bottom-width: 1px;
+    color: #687386;
+    background: #f8f9fb;
+    font-size: .78rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.user-list-card tbody td {
+    padding: 1rem 1.25rem;
+}
+
+.user-id-column {
+    width: 8rem;
+}
+
+.user-actions-column {
+    width: 5rem;
+}
+
+.user-actions-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid #e3e7ee;
+    color: #445066;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.access-table th,
+.access-table td {
+    min-width: 5.5rem;
+}
+
+.access-table th:first-child {
+    min-width: 10rem;
+}
+
+.access-table .form-check-input {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+@media (max-width: 575.98px) {
+    .user-table-responsive {
+        overflow-x: auto;
+    }
+}
+
 .validation-summary-valid {
     display: none;
 }
