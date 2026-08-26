@@ -1,0 +1,233 @@
+@page
+@model HostManagementModel
+@{
+    ViewData["Title"] = "Host management";
+    ViewData["FullWidth"] = true;
+}
+
+<div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-primary fw-semibold text-uppercase small mb-1">Infrastructure</p>
+        <h1 class="h2 mb-1">Host management</h1>
+        <p class="text-muted mb-0">Configure the machines Webboard reaches through WebBoard.Agent.</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill text-bg-primary fs-6 px-3 py-2">
+            @Model.Hosts.Count @(Model.Hosts.Count == 1 ? "host" : "hosts")
+        </span>
+        @if (Model.CanCreate) {
+            <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#host-modal"
+                    data-host-action="add">
+                Add host
+            </button>
+        }
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage) {
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @statusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage) {
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="card border-0 shadow-sm host-list-card">
+    @if (Model.Hosts.Count == 0) {
+        <div class="card-body text-center py-5">
+            <h2 class="h5">No hosts configured</h2>
+            <p class="text-muted mb-0">Add a host after starting WebBoard.Agent on it.</p>
+        </div>
+    }
+    else {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                <tr>
+                    <th scope="col">Host</th>
+                    <th scope="col">Agent base URL</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Added</th>
+                    <th scope="col" class="host-actions-column"><span class="visually-hidden">Actions</span></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var host in Model.Hosts) {
+                    <tr>
+                        <td class="fw-semibold">@host.Name</td>
+                        <td><code class="host-url">@host.AgentBaseUrl</code></td>
+                        <td>
+                            <span class="badge rounded-pill @(host.IsEnabled ? "text-bg-success" : "text-bg-secondary")">
+                                @(host.IsEnabled ? "Enabled" : "Disabled")
+                            </span>
+                        </td>
+                        <td class="text-muted">@host.DateCreated.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                        <td class="text-end">
+                            @if (Model.CanUpdate || Model.CanDelete) {
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-light host-actions-button" type="button"
+                                            data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for @host.Name">
+                                        <span aria-hidden="true">&#9776;</span>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        @if (Model.CanUpdate) {
+                                            <li>
+                                                <button type="button" class="dropdown-item js-configure-host"
+                                                        data-bs-toggle="modal" data-bs-target="#host-modal"
+                                                        data-host-id="@host.Id" data-host-name="@host.Name"
+                                                        data-host-url="@host.AgentBaseUrl"
+                                                        data-host-enabled="@host.IsEnabled.ToString().ToLowerInvariant()">
+                                                    Configure host
+                                                </button>
+                                            </li>
+                                        }
+                                        @if (Model.CanUpdate && Model.CanDelete) {
+                                            <li><hr class="dropdown-divider"/></li>
+                                        }
+                                        @if (Model.CanDelete) {
+                                            <li>
+                                                <form method="post" asp-page-handler="Delete" asp-route-hostId="@host.Id"
+                                                      onsubmit="return confirm('Delete this host? Its configuration will be removed from Webboard.');">
+                                                    <button type="submit" class="dropdown-item text-danger">Delete host</button>
+                                                </form>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (Model.CanCreate || Model.CanUpdate) {
+    <div class="modal fade" id="host-modal" tabindex="-1" aria-labelledby="host-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" asp-page-handler="Add" id="host-form"
+                      data-test-url="@Url.Page("/HostManagement", "TestAgent")">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5" id="host-modal-title">Add host</h2>
+                            <p class="text-muted small mb-0">The agent must be healthy before this can be saved.</p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input asp-for="Host.Id" type="hidden"/>
+                        <div class="mb-3">
+                            <label asp-for="Host.Name" class="form-label"></label>
+                            <input asp-for="Host.Name" class="form-control" autocomplete="off" placeholder="Home server"/>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="Host.AgentBaseUrl" class="form-label"></label>
+                            <div class="input-group">
+                                <input asp-for="Host.AgentBaseUrl" class="form-control" type="url"
+                                       placeholder="http://host.example:5080"/>
+                                <button class="btn btn-outline-secondary" type="button" id="test-agent">Test agent</button>
+                            </div>
+                            <div class="form-text">Webboard calls <code>/health</code> relative to this URL.</div>
+                            <div class="small mt-2 d-none" id="health-result" role="status"></div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input asp-for="Host.IsEnabled" class="form-check-input"/>
+                            <label asp-for="Host.IsEnabled" class="form-check-label"></label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="save-host">Test and add host</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const form = document.getElementById('host-form');
+            if (!form) return;
+
+            const title = document.getElementById('host-modal-title');
+            const id = document.getElementById('Host_Id');
+            const name = document.getElementById('Host_Name');
+            const url = document.getElementById('Host_AgentBaseUrl');
+            const enabled = document.getElementById('Host_IsEnabled');
+            const result = document.getElementById('health-result');
+            const testButton = document.getElementById('test-agent');
+            const saveButton = document.getElementById('save-host');
+
+            const clearResult = () => {
+                result.className = 'small mt-2 d-none';
+                result.textContent = '';
+            };
+
+            document.querySelector('[data-host-action="add"]')?.addEventListener('click', () => {
+                form.action = '@Url.Page("/HostManagement", "Add")';
+                form.reset();
+                id.value = '0';
+                enabled.checked = true;
+                title.textContent = 'Add host';
+                saveButton.textContent = 'Test and add host';
+                clearResult();
+            });
+
+            document.querySelectorAll('.js-configure-host').forEach(button => {
+                button.addEventListener('click', () => {
+                    form.action = '@Url.Page("/HostManagement", "Update")';
+                    id.value = button.dataset.hostId;
+                    name.value = button.dataset.hostName;
+                    url.value = button.dataset.hostUrl;
+                    enabled.checked = button.dataset.hostEnabled === 'true';
+                    title.textContent = 'Configure host';
+                    saveButton.textContent = 'Test and save changes';
+                    clearResult();
+                });
+            });
+
+            url.addEventListener('input', clearResult);
+            testButton.addEventListener('click', async () => {
+                testButton.disabled = true;
+                testButton.textContent = 'Testing…';
+                clearResult();
+
+                const body = new FormData();
+                body.append('agentBaseUrl', url.value);
+                body.append('__RequestVerificationToken',
+                    form.querySelector('input[name="__RequestVerificationToken"]').value);
+
+                try {
+                    const response = await fetch(form.dataset.testUrl, { method: 'POST', body });
+                    if (!response.ok) throw new Error();
+                    const health = await response.json();
+                    result.className = `small mt-2 ${health.healthy ? 'text-success' : 'text-danger'}`;
+                    result.textContent = health.message;
+                }
+                catch {
+                    result.className = 'small mt-2 text-danger';
+                    result.textContent = 'Health check could not be completed.';
+                }
+                finally {
+                    testButton.disabled = false;
+                    testButton.textContent = 'Test agent';
+                }
+            });
+
+            form.addEventListener('submit', () => {
+                saveButton.disabled = true;
+                saveButton.textContent = 'Checking agent…';
+            });
+        })();
+    </script>
+}

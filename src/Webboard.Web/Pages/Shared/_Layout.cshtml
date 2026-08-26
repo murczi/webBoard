@@ -25,6 +25,11 @@
                         <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
                     </li>
                     @if (User.Identity?.IsAuthenticated == true) {
+                        @if (HostAccess.Has(User, HostAccess.Read)) {
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-area="" asp-page="/HostManagement">Hosts</a>
+                            </li>
+                        }
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/UserManagement">Users</a>
                         </li>

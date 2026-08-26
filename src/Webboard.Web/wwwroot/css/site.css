@@ -81,6 +81,43 @@ body {
     border-radius: 1rem;
 }
 
+.host-list-card {
+    border-radius: 1rem;
+}
+
+.host-list-card thead th {
+    padding: 1rem 1.25rem;
+    border-bottom-width: 1px;
+    color: #687386;
+    background: #f8f9fb;
+    font-size: .78rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.host-list-card tbody td {
+    padding: 1rem 1.25rem;
+}
+
+.host-url {
+    color: #445066;
+    white-space: nowrap;
+}
+
+.host-actions-column {
+    width: 5rem;
+}
+
+.host-actions-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid #e3e7ee;
+    color: #445066;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
 .user-table-responsive {
     overflow: visible;
 }

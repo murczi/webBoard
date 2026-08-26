@@ -26,7 +26,16 @@ builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
 builder.Services.AddScoped<IUserCrudAccessRepository, UserCrudAccessRepository>();
 builder.Services.AddScoped<IUserCrudAccessService, UserCrudAccessService>();
 builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
+builder.Services.AddScoped<IHostRepository, HostRepository>();
+builder.Services.AddScoped<IHostManagementService, HostManagementService>();
 builder.Services.AddScoped<JwtSessionService>();
+builder.Services
+    .AddHttpClient<IAgentHealthChecker, Webboard.Web.Services.AgentHealthChecker>(client =>
+        client.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    });
 
 var jwtOptions = builder.Configuration
     .GetSection(JwtOptions.SectionName)
@@ -77,7 +86,9 @@ builder.Services
             }
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+    options.AddPolicy(HostAccess.Read, policy =>
+        policy.RequireClaim(JwtSessionService.AccessClaimType, HostAccess.Read)));
 
 builder.Services.AddRazorPages();
 
