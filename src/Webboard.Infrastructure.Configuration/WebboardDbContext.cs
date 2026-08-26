@@ -9,6 +9,7 @@ public class WebboardDbContext(DbContextOptions<WebboardDbContext> options) : Db
     public DbSet<ModuleEntity> Modules => Set<ModuleEntity>();
     public DbSet<HostEntity> Hosts => Set<HostEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
+    public DbSet<UserCrudAccessEntity> UserCrudAccess => Set<UserCrudAccessEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         base.OnModelCreating(modelBuilder);

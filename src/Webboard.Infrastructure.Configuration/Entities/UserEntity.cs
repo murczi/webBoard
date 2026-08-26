@@ -18,4 +18,7 @@ public class UserEntity {
 
     public ICollection<AuditLogEntity> AuditLogsAsTarget { get; set; }
         = new List<AuditLogEntity>();
+
+    public ICollection<UserCrudAccessEntity> CrudAccess { get; set; }
+        = new List<UserCrudAccessEntity>();
 }
