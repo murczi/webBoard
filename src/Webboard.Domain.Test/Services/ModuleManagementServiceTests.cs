@@ -11,7 +11,7 @@ public class ModuleManagementServiceTests {
         var service = new ModuleManagementService(repository);
         var module = NewModule();
 
-        await service.AddAsync(module);
+        await service.AddAsync(module, 1, "Test change");
 
         Assert.Single(repository.Modules);
         Assert.Null(module.HostId);
@@ -26,7 +26,7 @@ public class ModuleManagementServiceTests {
         var module = NewModule();
         module.HostId = 4;
 
-        await service.AddAsync(module);
+        await service.AddAsync(module, 1, "Test change");
 
         Assert.Equal(4, Assert.Single(repository.Modules).HostId);
     }
@@ -37,7 +37,8 @@ public class ModuleManagementServiceTests {
         var module = NewModule();
         module.HostId = 99;
 
-        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(module));
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
 
         Assert.Contains("valid host", exception.Message);
     }
@@ -47,7 +48,8 @@ public class ModuleManagementServiceTests {
         var repository = new FakeModuleRepository { ValidTypeId = 2 };
         var service = new ModuleManagementService(repository);
 
-        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(NewModule()));
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(NewModule(), 1, "Test change"));
 
         Assert.Contains("valid module type", exception.Message);
     }
@@ -61,7 +63,30 @@ public class ModuleManagementServiceTests {
         var module = NewModule();
         module.HealthCheckUrl = healthCheckUrl;
 
-        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(module));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task AddAsync_RequiresAuditComment(string auditComment) {
+        var service = new ModuleManagementService(new FakeModuleRepository());
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(NewModule(), 1, auditComment));
+
+        Assert.Contains("Audit comment", exception.Message);
+    }
+
+    [Fact]
+    public async Task AddAsync_RejectsAuditCommentOverDatabaseLimit() {
+        var service = new ModuleManagementService(new FakeModuleRepository());
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(NewModule(), 1, new string('a', 101)));
+
+        Assert.Contains("100", exception.Message);
     }
 
     private static ModuleModel NewModule() => new()
@@ -96,13 +121,21 @@ public class ModuleManagementServiceTests {
         public Task<bool> TypeExistsAsync(int typeId, CancellationToken cancellationToken = default) =>
             Task.FromResult(ValidTypeId == typeId);
 
-        public Task AddAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+        public Task AddAsync(
+            ModuleModel module,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) {
             module.Id = Modules.Count + 1;
             Modules.Add(module);
             return Task.CompletedTask;
         }
 
-        public Task<bool> UpdateAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+        public Task<bool> UpdateAsync(
+            ModuleModel module,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) {
             var index = Modules.FindIndex(item => item.Id == module.Id);
             if (index < 0)
                 return Task.FromResult(false);
@@ -110,7 +143,11 @@ public class ModuleManagementServiceTests {
             return Task.FromResult(true);
         }
 
-        public Task<bool> DeleteAsync(int moduleId, CancellationToken cancellationToken = default) =>
+        public Task<bool> DeleteAsync(
+            int moduleId,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(Modules.RemoveAll(module => module.Id == moduleId) > 0);
     }
 }

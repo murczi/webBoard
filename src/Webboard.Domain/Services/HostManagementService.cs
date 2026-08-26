@@ -12,28 +12,46 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
     public Task<AgentHealthResult> TestAgentAsync(string agentBaseUrl, CancellationToken cancellationToken = default) =>
         healthChecker.CheckAsync(agentBaseUrl, cancellationToken);
 
-    public async Task<HostModel> AddAsync(HostModel host, CancellationToken cancellationToken = default) {
+    public async Task<HostModel> AddAsync(
+        HostModel host,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
         Normalize(host);
+        auditComment = AuditComment.Normalize(auditComment);
         if (await repository.NameExistsAsync(host.Name, cancellationToken: cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
         await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
         host.DateCreated = DateTime.UtcNow;
-        await repository.AddAsync(host, cancellationToken);
+        await repository.AddAsync(host, actorId, auditComment, cancellationToken);
         return host;
     }
 
-    public async Task<bool> UpdateAsync(HostModel host, CancellationToken cancellationToken = default) {
+    public async Task<bool> UpdateAsync(
+        HostModel host,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
         Normalize(host);
+        auditComment = AuditComment.Normalize(auditComment);
         if (await repository.NameExistsAsync(host.Name, host.Id, cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
         await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
-        return await repository.UpdateAsync(host, cancellationToken);
+        return await repository.UpdateAsync(host, actorId, auditComment, cancellationToken);
     }
 
-    public Task<bool> DeleteAsync(int hostId, CancellationToken cancellationToken = default) =>
-        repository.DeleteAsync(hostId, cancellationToken);
+    public Task<bool> DeleteAsync(
+        int hostId,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) =>
+        repository.DeleteAsync(
+            hostId,
+            actorId,
+            AuditComment.Normalize(auditComment),
+            cancellationToken);
 
     private async Task RequireHealthyAgentAsync(string agentBaseUrl, CancellationToken cancellationToken) {
         var health = await healthChecker.CheckAsync(agentBaseUrl, cancellationToken);

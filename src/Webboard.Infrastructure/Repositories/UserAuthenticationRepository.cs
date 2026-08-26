@@ -60,13 +60,21 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
             return false;
 
         var now = DateTime.UtcNow;
-        dbContext.Users.Add(new UserEntity
+        var entity = new UserEntity
         {
             Name = name,
             PasswordHash = passwordHash,
             DeletionFlag = false,
             DateCreated = now,
             DateUpdated = now
+        };
+        dbContext.Users.Add(entity);
+        dbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            Comment = "Created user.",
+            DateCreated = now,
+            Actor = entity,
+            User = entity
         });
 
         try {

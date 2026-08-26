@@ -1,0 +1,42 @@
+<div class="modal fade" id="audit-log-modal" tabindex="-1"
+     aria-labelledby="audit-log-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title fs-5" id="audit-log-modal-title">Logs</h2>
+                    <p class="text-muted small mb-0" id="audit-log-target"></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center text-muted py-5" id="audit-log-loading" role="status">
+                    Loading logs&hellip;
+                </div>
+                <div class="alert alert-danger d-none" id="audit-log-error" role="alert">
+                    Logs could not be loaded. Try again.
+                </div>
+                <p class="text-muted text-center py-5 d-none" id="audit-log-empty">No logs found.</p>
+                <div class="table-responsive d-none" id="audit-log-results">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                        <tr>
+                            <th scope="col">Actor</th>
+                            <th scope="col">Comment</th>
+                            <th scope="col">Date created</th>
+                        </tr>
+                        </thead>
+                        <tbody id="audit-log-rows"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between d-none" id="audit-log-pagination">
+                <span class="small text-muted" id="audit-log-page-label"></span>
+                <div class="btn-group" role="group" aria-label="Log pages">
+                    <button type="button" class="btn btn-outline-secondary" id="audit-log-previous">Previous</button>
+                    <button type="button" class="btn btn-outline-secondary" id="audit-log-next">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -3,6 +3,7 @@ namespace Webboard.Infrastructure.Configuration.Configurations;
 using Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Webboard.Domain.Model.AuditLogs;
 
 public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
     public void Configure(EntityTypeBuilder<AuditLogEntity> builder) {
@@ -17,7 +18,7 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
 
         builder.Property(propertyExpression: log => log.Comment)
                .IsRequired()
-               .HasMaxLength(maxLength: 100);
+               .HasMaxLength(maxLength: AuditLogModel.MaxCommentLength);
 
         builder.HasOne(navigationExpression: log => log.Module)
                .WithMany(navigationExpression: module => module.AuditLogs)

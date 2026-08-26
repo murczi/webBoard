@@ -30,14 +30,25 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
 
     public async Task<bool> DeleteUserAsync(
         int userId,
-        CancellationToken cancellationToken = default) =>
-        await dbContext.Users
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var deleted = await dbContext.Users
             .Where(user => user.Id == userId && !user.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(user => user.DeletionFlag, true)
                     .SetProperty(user => user.DateUpdated, DateTime.UtcNow),
                 cancellationToken) > 0;
+        if (!deleted)
+            return false;
+
+        AddAuditLog(actorId, userId, auditComment);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
 
     public async Task<IReadOnlyList<UserCrudAccessModel>> GetByUserIdAsync(
         int userId,
@@ -68,6 +79,16 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
 
     public void Delete(UserCrudAccessModel access) =>
         dbContext.UserCrudAccess.Remove(ToEntity(access));
+
+    public void AddAuditLog(int actorId, int userId, string auditComment) =>
+        dbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            ActorId = actorId,
+            Comment = auditComment,
+            DateCreated = DateTime.UtcNow,
+            UserId = userId,
+            Actor = null!
+        });
 
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         await dbContext.SaveChangesAsync(cancellationToken);

@@ -12,6 +12,8 @@ public interface IUserCrudAccessRepository {
 
     Task<bool> DeleteUserAsync(
         int userId,
+        int actorId,
+        string auditComment,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UserCrudAccessModel>> GetByUserIdAsync(
@@ -25,6 +27,8 @@ public interface IUserCrudAccessRepository {
     void Update(UserCrudAccessModel access);
 
     void Delete(UserCrudAccessModel access);
+
+    void AddAuditLog(int actorId, int userId, string auditComment);
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

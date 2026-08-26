@@ -47,7 +47,11 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
     public Task<bool> TypeExistsAsync(int typeId, CancellationToken cancellationToken = default) =>
         dbContext.ModuleTypes.AnyAsync(type => type.Id == typeId, cancellationToken);
 
-    public async Task AddAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+    public async Task AddAsync(
+        ModuleModel module,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
         var entity = new ModuleEntity
         {
             TypeId = module.TypeId,
@@ -62,12 +66,25 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             DateUpdated = module.DateUpdated
         };
         dbContext.Modules.Add(entity);
+        dbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            ActorId = actorId,
+            Comment = auditComment,
+            DateCreated = DateTime.UtcNow,
+            Module = entity,
+            Actor = null!
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         module.Id = entity.Id;
     }
 
-    public async Task<bool> UpdateAsync(ModuleModel module, CancellationToken cancellationToken = default) =>
-        await dbContext.Modules
+    public async Task<bool> UpdateAsync(
+        ModuleModel module,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var updated = await dbContext.Modules
             .Where(entity => entity.Id == module.Id && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
@@ -80,9 +97,22 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(entity => entity.IsEnabled, module.IsEnabled)
                     .SetProperty(entity => entity.DateUpdated, module.DateUpdated),
                 cancellationToken) > 0;
+        if (!updated)
+            return false;
 
-    public async Task<bool> DeleteAsync(int moduleId, CancellationToken cancellationToken = default) =>
-        await dbContext.Modules
+        AddAuditLog(module.Id, actorId, auditComment);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> DeleteAsync(
+        int moduleId,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var deleted = await dbContext.Modules
             .Where(module => module.Id == moduleId && !module.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
@@ -90,4 +120,22 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(module => module.IsEnabled, false)
                     .SetProperty(module => module.DateUpdated, DateTimeOffset.UtcNow),
                 cancellationToken) > 0;
+        if (!deleted)
+            return false;
+
+        AddAuditLog(moduleId, actorId, auditComment);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    private void AddAuditLog(int moduleId, int actorId, string comment) =>
+        dbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            ActorId = actorId,
+            Comment = comment,
+            DateCreated = DateTime.UtcNow,
+            ModuleId = moduleId,
+            Actor = null!
+        });
 }

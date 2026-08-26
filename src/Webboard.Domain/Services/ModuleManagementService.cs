@@ -14,23 +14,41 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
     public Task<IReadOnlyList<ModuleOptionModel>> GetTypesAsync(CancellationToken cancellationToken = default) =>
         repository.GetTypesAsync(cancellationToken);
 
-    public async Task<ModuleModel> AddAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+    public async Task<ModuleModel> AddAsync(
+        ModuleModel module,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
+        auditComment = AuditComment.Normalize(auditComment);
         var now = DateTimeOffset.UtcNow;
         module.DateCreated = now;
         module.DateUpdated = now;
-        await repository.AddAsync(module, cancellationToken);
+        await repository.AddAsync(module, actorId, auditComment, cancellationToken);
         return module;
     }
 
-    public async Task<bool> UpdateAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+    public async Task<bool> UpdateAsync(
+        ModuleModel module,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
+        auditComment = AuditComment.Normalize(auditComment);
         module.DateUpdated = DateTimeOffset.UtcNow;
-        return await repository.UpdateAsync(module, cancellationToken);
+        return await repository.UpdateAsync(module, actorId, auditComment, cancellationToken);
     }
 
-    public Task<bool> DeleteAsync(int moduleId, CancellationToken cancellationToken = default) =>
-        repository.DeleteAsync(moduleId, cancellationToken);
+    public Task<bool> DeleteAsync(
+        int moduleId,
+        int actorId,
+        string auditComment,
+        CancellationToken cancellationToken = default) =>
+        repository.DeleteAsync(
+            moduleId,
+            actorId,
+            AuditComment.Normalize(auditComment),
+            cancellationToken);
 
     private async Task ValidateAndNormalizeAsync(
         ModuleModel module,

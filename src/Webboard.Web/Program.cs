@@ -25,6 +25,8 @@ builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
 
 builder.Services.AddScoped<IUserCrudAccessRepository, UserCrudAccessRepository>();
 builder.Services.AddScoped<IUserCrudAccessService, UserCrudAccessService>();
+builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
 builder.Services.AddScoped<IHostRepository, HostRepository>();
 builder.Services.AddScoped<IHostManagementService, HostManagementService>();

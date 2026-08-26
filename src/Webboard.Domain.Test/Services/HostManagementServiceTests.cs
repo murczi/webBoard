@@ -14,7 +14,7 @@ public class HostManagementServiceTests {
             new FakeHealthChecker(new AgentHealthResult(true, "Agent is healthy.")));
         var host = NewHost(" http://agent.local:5080/ ");
 
-        await service.AddAsync(host);
+        await service.AddAsync(host, 1, "Test change");
 
         Assert.Single(repository.Hosts);
         Assert.Equal("http://agent.local:5080", host.AgentBaseUrl);
@@ -29,7 +29,7 @@ public class HostManagementServiceTests {
             new FakeHealthChecker(new AgentHealthResult(false, "Agent could not be reached.")));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.AddAsync(NewHost("http://agent.local:5080")));
+            () => service.AddAsync(NewHost("http://agent.local:5080"), 1, "Test change"));
 
         Assert.Equal("Agent could not be reached.", exception.Message);
         Assert.Empty(repository.Hosts);
@@ -44,7 +44,8 @@ public class HostManagementServiceTests {
         var host = NewHost("http://agent.local:5080");
         host.Id = 7;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateAsync(host));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UpdateAsync(host, 1, "Test change"));
 
         Assert.Empty(repository.Hosts);
     }
@@ -59,7 +60,20 @@ public class HostManagementServiceTests {
             new FakeHostRepository(),
             new FakeHealthChecker(new AgentHealthResult(true, "Agent is healthy.")));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(NewHost(agentBaseUrl)));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(NewHost(agentBaseUrl), 1, "Test change"));
+    }
+
+    [Fact]
+    public async Task AddAsync_RequiresAuditComment() {
+        var service = new HostManagementService(
+            new FakeHostRepository(),
+            new FakeHealthChecker(new AgentHealthResult(true, "Agent is healthy.")));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(NewHost("http://agent.local:5080"), 1, " "));
+
+        Assert.Contains("Audit comment", exception.Message);
     }
 
     private static HostModel NewHost(string agentBaseUrl) => new()
@@ -89,13 +103,21 @@ public class HostManagementServiceTests {
                 host.Id != excludingHostId &&
                 string.Equals(host.Name, name, StringComparison.OrdinalIgnoreCase)));
 
-        public Task AddAsync(HostModel host, CancellationToken cancellationToken = default) {
+        public Task AddAsync(
+            HostModel host,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) {
             host.Id = Hosts.Count + 1;
             Hosts.Add(host);
             return Task.CompletedTask;
         }
 
-        public Task<bool> UpdateAsync(HostModel host, CancellationToken cancellationToken = default) {
+        public Task<bool> UpdateAsync(
+            HostModel host,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) {
             var index = Hosts.FindIndex(item => item.Id == host.Id);
             if (index < 0)
                 return Task.FromResult(false);
@@ -103,7 +125,11 @@ public class HostManagementServiceTests {
             return Task.FromResult(true);
         }
 
-        public Task<bool> DeleteAsync(int hostId, CancellationToken cancellationToken = default) =>
+        public Task<bool> DeleteAsync(
+            int hostId,
+            int actorId,
+            string auditComment,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(Hosts.RemoveAll(host => host.Id == hostId) > 0);
     }
 }

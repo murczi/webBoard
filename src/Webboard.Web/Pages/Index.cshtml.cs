@@ -1,8 +1,10 @@
 namespace Webboard.Web.Pages;
 
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using Authentication;
 using Domain.Interfaces.Services;
+using Domain.Model.AuditLogs;
 using Domain.Model.Modules;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 public class IndexModel(
     IModuleManagementService modules,
     IModuleHealthChecker healthChecker,
+    IAuditLogService auditLogs,
     JwtSessionService sessions) : PageModel {
     public IReadOnlyList<ModuleTileModel> ModuleTiles { get; private set; } = [];
     public IReadOnlyList<ModuleModel> HiddenModules { get; private set; } = [];
@@ -22,9 +25,15 @@ public class IndexModel(
     public bool CanCreate => ModuleAccess.Has(User, ModuleAccess.Create);
     public bool CanUpdate => ModuleAccess.Has(User, ModuleAccess.Update);
     public bool CanDelete => ModuleAccess.Has(User, ModuleAccess.Delete);
+    public bool CanReadLogs => AuditLogAccess.HasRead(User);
+    public int? CurrentUserId => int.TryParse(
+        User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : null;
 
     [BindProperty]
     public ModuleInputModel Module { get; set; } = new();
+
+    [BindProperty]
+    public string AuditComment { get; set; } = string.Empty;
 
     public async Task OnGetAsync(CancellationToken cancellationToken) {
         var canManage = CanUpdate || CanDelete;
@@ -78,13 +87,15 @@ public class IndexModel(
     public async Task<IActionResult> OnPostAddAsync(CancellationToken cancellationToken) {
         if (!CanCreate)
             return Forbid();
+        if (CurrentUserId is not int actorId)
+            return Challenge();
         if (!ModelState.IsValid) {
             TempData["ErrorMessage"] = "Check the module details and try again.";
             return RedirectToPage();
         }
 
         try {
-            await modules.AddAsync(Module.ToModel(), cancellationToken);
+            await modules.AddAsync(Module.ToModel(), actorId, "Created module.", cancellationToken);
             TempData["StatusMessage"] = "Module added.";
         }
         catch (ArgumentException exception) {
@@ -96,13 +107,16 @@ public class IndexModel(
     public async Task<IActionResult> OnPostUpdateAsync(CancellationToken cancellationToken) {
         if (!CanUpdate)
             return Forbid();
-        if (!ModelState.IsValid) {
+        if (CurrentUserId is not int actorId)
+            return Challenge();
+        if (!IsValidAuditComment() || !ModelState.IsValid) {
             TempData["ErrorMessage"] = "Check the module details and try again.";
             return RedirectToPage();
         }
 
         try {
-            var updated = await modules.UpdateAsync(Module.ToModel(), cancellationToken);
+            var updated = await modules.UpdateAsync(
+                Module.ToModel(), actorId, AuditComment, cancellationToken);
             TempData[updated ? "StatusMessage" : "ErrorMessage"] = updated
                 ? "Module updated."
                 : "The selected module no longer exists.";
@@ -118,12 +132,37 @@ public class IndexModel(
         CancellationToken cancellationToken) {
         if (!CanDelete)
             return Forbid();
+        if (CurrentUserId is not int actorId)
+            return Challenge();
 
-        var deleted = await modules.DeleteAsync(moduleId, cancellationToken);
+        var deleted = await modules.DeleteAsync(
+            moduleId, actorId, "Deleted module.", cancellationToken);
         TempData[deleted ? "StatusMessage" : "ErrorMessage"] = deleted
             ? "Module deleted."
             : "The selected module no longer exists.";
         return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnGetLogsAsync(
+        int moduleId,
+        int page = 1,
+        CancellationToken cancellationToken = default) {
+        if (!CanReadLogs)
+            return Forbid();
+
+        return new JsonResult(
+            await auditLogs.GetModuleLogsAsync(moduleId, page, cancellationToken));
+    }
+
+    private bool IsValidAuditComment() {
+        if (!string.IsNullOrWhiteSpace(AuditComment) &&
+            AuditComment.Trim().Length <= AuditLogModel.MaxCommentLength)
+            return true;
+
+        ModelState.AddModelError(
+            nameof(AuditComment),
+            $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.");
+        return false;
     }
 
     public sealed record ModuleTileModel(ModuleModel Module, ModuleHealthResult Health);

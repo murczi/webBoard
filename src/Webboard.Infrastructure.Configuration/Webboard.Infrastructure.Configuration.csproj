@@ -7,6 +7,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Webboard.Domain.Model\Webboard.Domain.Model.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="DotNetEnv" Version="3.2.0"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">

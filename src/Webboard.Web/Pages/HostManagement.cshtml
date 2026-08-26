@@ -1,5 +1,6 @@
 @page
 @model HostManagementModel
+@using Webboard.Domain.Model.AuditLogs
 @{
     ViewData["Title"] = "Host management";
     ViewData["FullWidth"] = true;
@@ -68,7 +69,7 @@
                         </td>
                         <td class="text-muted">@host.DateCreated.ToLocalTime().ToString("yyyy-MM-dd")</td>
                         <td class="text-end">
-                            @if (Model.CanUpdate || Model.CanDelete) {
+                            @if (Model.CanUpdate || Model.CanDelete || Model.CanReadLogs) {
                                 <div class="dropdown">
                                     <button class="btn btn-sm btn-light host-actions-button" type="button"
                                             data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for @host.Name">
@@ -86,7 +87,14 @@
                                                 </button>
                                             </li>
                                         }
-                                        @if (Model.CanUpdate && Model.CanDelete) {
+                                        @if (Model.CanReadLogs) {
+                                            <li>
+                                                <button type="button" class="dropdown-item js-view-logs"
+                                                        data-logs-url="@Url.Page("/HostManagement", "Logs", new { hostId = host.Id })"
+                                                        data-logs-target="@host.Name">Logs</button>
+                                            </li>
+                                        }
+                                        @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
                                             <li><hr class="dropdown-divider"/></li>
                                         }
                                         @if (Model.CanDelete) {
@@ -142,6 +150,13 @@
                             <input asp-for="Host.IsEnabled" class="form-check-input"/>
                             <label asp-for="Host.IsEnabled" class="form-check-label"></label>
                         </div>
+                        <div class="mt-3 d-none" id="host-audit-comment-field">
+                            <label for="host-audit-comment" class="form-label">Audit comment</label>
+                            <textarea class="form-control" id="host-audit-comment" name="AuditComment"
+                                      rows="2" maxlength="@AuditLogModel.MaxCommentLength" disabled
+                                      placeholder="Why is this change being made?"></textarea>
+                            <div class="form-text">Required when editing. Maximum @AuditLogModel.MaxCommentLength characters.</div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -153,7 +168,14 @@
     </div>
 }
 
+@if (Model.CanReadLogs) {
+    <partial name="Shared/_AuditLogModal"/>
+}
+
 @section Scripts {
+    @if (Model.CanReadLogs) {
+        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
+    }
     <script>
         (() => {
             const form = document.getElementById('host-form');
@@ -164,9 +186,18 @@
             const name = document.getElementById('Host_Name');
             const url = document.getElementById('Host_AgentBaseUrl');
             const enabled = document.getElementById('Host_IsEnabled');
+            const auditCommentField = document.getElementById('host-audit-comment-field');
+            const auditComment = document.getElementById('host-audit-comment');
             const result = document.getElementById('health-result');
             const testButton = document.getElementById('test-agent');
             const saveButton = document.getElementById('save-host');
+
+            const setAuditCommentRequired = required => {
+                auditCommentField.classList.toggle('d-none', !required);
+                auditComment.disabled = !required;
+                auditComment.required = required;
+                auditComment.value = '';
+            };
 
             const clearResult = () => {
                 result.className = 'small mt-2 d-none';
@@ -180,6 +211,7 @@
                 enabled.checked = true;
                 title.textContent = 'Add host';
                 saveButton.textContent = 'Test and add host';
+                setAuditCommentRequired(false);
                 clearResult();
             });
 
@@ -192,6 +224,7 @@
                     enabled.checked = button.dataset.hostEnabled === 'true';
                     title.textContent = 'Configure host';
                     saveButton.textContent = 'Test and save changes';
+                    setAuditCommentRequired(true);
                     clearResult();
                 });
             });

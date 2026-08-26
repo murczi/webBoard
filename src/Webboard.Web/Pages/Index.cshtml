@@ -1,5 +1,6 @@
 ﻿@page
 @model IndexModel
+@using Webboard.Domain.Model.AuditLogs
 @using Webboard.Domain.Model.Modules
 @{
     ViewData["Title"] = "Dashboard";
@@ -93,7 +94,7 @@ else {
                                 <a class="btn btn-sm btn-outline-primary" href="@tile.Module.ManagementUrl"
                                    target="_blank" rel="noopener noreferrer">Open</a>
                             }
-                            @if (Model.CanUpdate || Model.CanDelete) {
+                            @if (Model.CanUpdate || Model.CanDelete || Model.CanReadLogs) {
                                 <div class="dropdown">
                                     <button class="btn btn-sm btn-light module-actions-button" type="button"
                                             data-bs-toggle="dropdown" aria-expanded="false"
@@ -114,7 +115,14 @@ else {
                                                         data-module-enabled="true">Edit module</button>
                                             </li>
                                         }
-                                        @if (Model.CanUpdate && Model.CanDelete) {
+                                        @if (Model.CanReadLogs) {
+                                            <li>
+                                                <button type="button" class="dropdown-item js-view-logs"
+                                                        data-logs-url="@Url.Page("/Index", "Logs", new { moduleId = tile.Module.Id })"
+                                                        data-logs-target="@tile.Module.Name">Logs</button>
+                                            </li>
+                                        }
+                                        @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
                                             <li><hr class="dropdown-divider"/></li>
                                         }
                                         @if (Model.CanDelete) {
@@ -181,7 +189,14 @@ else {
                                                     data-module-enabled="false">Edit module</button>
                                         </li>
                                     }
-                                    @if (Model.CanUpdate && Model.CanDelete) {
+                                    @if (Model.CanReadLogs) {
+                                        <li>
+                                            <button type="button" class="dropdown-item js-view-logs"
+                                                    data-logs-url="@Url.Page("/Index", "Logs", new { moduleId = module.Id })"
+                                                    data-logs-target="@module.Name">Logs</button>
+                                        </li>
+                                    }
+                                    @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
                                         <li><hr class="dropdown-divider"/></li>
                                     }
                                     @if (Model.CanDelete) {
@@ -262,6 +277,13 @@ else {
                                     <label asp-for="Module.IsEnabled" class="form-check-label"></label>
                                 </div>
                             </div>
+                            <div class="col-12 d-none" id="module-audit-comment-field">
+                                <label for="module-audit-comment" class="form-label">Audit comment</label>
+                                <textarea class="form-control" id="module-audit-comment" name="AuditComment"
+                                          rows="2" maxlength="@AuditLogModel.MaxCommentLength" disabled
+                                          placeholder="Why is this change being made?"></textarea>
+                                <div class="form-text">Required when editing. Maximum @AuditLogModel.MaxCommentLength characters.</div>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -274,7 +296,14 @@ else {
     </div>
 }
 
+@if (Model.CanReadLogs) {
+    <partial name="Shared/_AuditLogModal"/>
+}
+
 @section Scripts {
+    @if (Model.CanReadLogs) {
+        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
+    }
     <script>
         (() => {
             const form = document.getElementById('module-form');
@@ -289,7 +318,16 @@ else {
             const healthUrl = document.getElementById('Module_HealthCheckUrl');
             const managementUrl = document.getElementById('Module_ManagementUrl');
             const enabled = document.getElementById('Module_IsEnabled');
+            const auditCommentField = document.getElementById('module-audit-comment-field');
+            const auditComment = document.getElementById('module-audit-comment');
             const saveButton = document.getElementById('save-module');
+
+            const setAuditCommentRequired = required => {
+                auditCommentField.classList.toggle('d-none', !required);
+                auditComment.disabled = !required;
+                auditComment.required = required;
+                auditComment.value = '';
+            };
 
             document.querySelector('[data-module-action="add"]')?.addEventListener('click', () => {
                 form.action = '@Url.Page("/Index", "Add")';
@@ -299,6 +337,7 @@ else {
                 enabled.checked = true;
                 title.textContent = 'Add module';
                 saveButton.textContent = 'Add module';
+                setAuditCommentRequired(false);
             });
 
             document.querySelectorAll('.js-edit-module').forEach(button => {
@@ -314,6 +353,7 @@ else {
                     enabled.checked = button.dataset.moduleEnabled === 'true';
                     title.textContent = 'Edit module';
                     saveButton.textContent = 'Save changes';
+                    setAuditCommentRequired(true);
                 });
             });
 

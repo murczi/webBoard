@@ -22,8 +22,14 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
 
     public Task<bool> DeleteUserAsync(
         int userId,
+        int actorId,
+        string auditComment,
         CancellationToken cancellationToken = default) =>
-        repository.DeleteUserAsync(userId, cancellationToken);
+        repository.DeleteUserAsync(
+            userId,
+            actorId,
+            AuditComment.Normalize(auditComment),
+            cancellationToken);
 
     public async Task<IReadOnlyList<UserCrudAccessModel>> GetAccessAsync(
         int userId,
@@ -52,7 +58,10 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
     public async Task SaveAccessAsync(
         int userId,
         IReadOnlyCollection<UserCrudAccessModel> access,
+        int actorId,
+        string auditComment,
         CancellationToken cancellationToken = default) {
+        auditComment = AuditComment.Normalize(auditComment);
         if (!await repository.UserExistsAsync(userId, cancellationToken))
             throw new KeyNotFoundException($"User {userId} was not found.");
 
@@ -87,6 +96,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
             }
         }
 
+        repository.AddAuditLog(actorId, userId, auditComment);
         await repository.SaveChangesAsync(cancellationToken);
     }
 }

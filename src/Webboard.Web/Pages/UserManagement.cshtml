@@ -1,5 +1,6 @@
 ﻿@page
 @model UserManagementModel
+@using Webboard.Domain.Model.AuditLogs
 @{
     ViewData["Title"] = "User management";
     ViewData["FullWidth"] = true;
@@ -70,6 +71,13 @@
                                             Set CRUD access
                                         </button>
                                     </li>
+                                    @if (Model.CanReadLogs) {
+                                        <li>
+                                            <button type="button" class="dropdown-item js-view-logs"
+                                                    data-logs-url="@Url.Page("/UserManagement", "Logs", new { userId = user.Id })"
+                                                    data-logs-target="@user.Name">Logs</button>
+                                        </li>
+                                    }
                                     <li><hr class="dropdown-divider"/></li>
                                     <li>
                                         @if (Model.CurrentUserId == user.Id) {
@@ -136,6 +144,13 @@
                     <p class="small text-muted mt-3 mb-0 d-none" id="access-note">
                         Module types and audit logs are read-only resources.
                     </p>
+                    <div class="mt-4">
+                        <label for="access-audit-comment" class="form-label">Audit comment</label>
+                        <textarea class="form-control" id="access-audit-comment" name="AuditComment"
+                                  rows="2" maxlength="@AuditLogModel.MaxCommentLength" required
+                                  placeholder="Why is this access being changed?"></textarea>
+                        <div class="form-text">Required. Maximum @AuditLogModel.MaxCommentLength characters.</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -146,7 +161,14 @@
     </div>
 </div>
 
+@if (Model.CanReadLogs) {
+    <partial name="Shared/_AuditLogModal"/>
+}
+
 @section Scripts {
+    @if (Model.CanReadLogs) {
+        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
+    }
     <script>
         (() => {
             const modalElement = document.getElementById('access-modal');
@@ -160,6 +182,7 @@
             const rows = document.getElementById('access-rows');
             const note = document.getElementById('access-note');
             const saveButton = document.getElementById('access-save');
+            const auditComment = document.getElementById('access-audit-comment');
             const resourceLabels = {
                 Users: 'Users',
                 Hosts: 'Hosts',
@@ -222,6 +245,7 @@
                     fields.classList.add('d-none');
                     note.classList.add('d-none');
                     saveButton.disabled = true;
+                    auditComment.value = '';
                     modal.show();
 
                     try {

@@ -12,10 +12,14 @@ public interface IUserCrudAccessService {
 
     Task<bool> DeleteUserAsync(
         int userId,
+        int actorId,
+        string auditComment,
         CancellationToken cancellationToken = default);
 
     Task SaveAccessAsync(
         int userId,
         IReadOnlyCollection<UserCrudAccessModel> access,
+        int actorId,
+        string auditComment,
         CancellationToken cancellationToken = default);
 }
