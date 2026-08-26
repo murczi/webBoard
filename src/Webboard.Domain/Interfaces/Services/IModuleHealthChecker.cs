@@ -4,6 +4,6 @@ using Model.Modules;
 
 public interface IModuleHealthChecker {
     Task<ModuleHealthResult> CheckAsync(
-        string? healthCheckUrl,
+        ModuleModel module,
         CancellationToken cancellationToken = default);
 }

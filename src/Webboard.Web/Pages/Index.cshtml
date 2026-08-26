@@ -111,6 +111,7 @@ else {
                                                         data-module-host-id="@tile.Module.HostId"
                                                         data-module-type-id="@tile.Module.TypeId"
                                                         data-module-health-url="@tile.Module.HealthCheckUrl"
+                                                        data-module-container-id="@tile.Module.ContainerId"
                                                         data-module-management-url="@tile.Module.ManagementUrl"
                                                         data-module-enabled="true">Edit module</button>
                                             </li>
@@ -185,6 +186,7 @@ else {
                                                     data-module-host-id="@module.HostId"
                                                     data-module-type-id="@module.TypeId"
                                                     data-module-health-url="@module.HealthCheckUrl"
+                                                    data-module-container-id="@module.ContainerId"
                                                     data-module-management-url="@module.ManagementUrl"
                                                     data-module-enabled="false">Edit module</button>
                                         </li>
@@ -255,15 +257,24 @@ else {
                                 <label asp-for="Module.TypeId" class="form-label"></label>
                                 <select asp-for="Module.TypeId" class="form-select" required>
                                     @foreach (var type in Model.Types) {
-                                        <option value="@type.Id">@type.Name</option>
+                                        <option value="@type.Id" data-type-name="@type.Name">@type.Name</option>
                                     }
                                 </select>
                             </div>
-                            <div class="col-12">
+                            <div class="col-12" id="module-health-url-field">
                                 <label asp-for="Module.HealthCheckUrl" class="form-label"></label>
                                 <input asp-for="Module.HealthCheckUrl" class="form-control" type="url"
                                        placeholder="https://service.example/health"/>
                                 <div class="form-text">Optional. A successful HTTP response is shown as healthy.</div>
+                            </div>
+                            <div class="col-12 d-none" id="module-container-field">
+                                <label asp-for="Module.ContainerId" class="form-label"></label>
+                                <select asp-for="Module.ContainerId" class="form-select" disabled>
+                                    <option value="">Select a host to load containers</option>
+                                </select>
+                                <div class="form-text" id="module-container-help">
+                                    Containers are loaded live from the selected host's agent.
+                                </div>
                             </div>
                             <div class="col-12">
                                 <label asp-for="Module.ManagementUrl" class="form-label"></label>
@@ -316,11 +327,77 @@ else {
             const host = document.getElementById('Module_HostId');
             const type = document.getElementById('Module_TypeId');
             const healthUrl = document.getElementById('Module_HealthCheckUrl');
+            const healthUrlField = document.getElementById('module-health-url-field');
+            const containerField = document.getElementById('module-container-field');
+            const container = document.getElementById('Module_ContainerId');
+            const containerHelp = document.getElementById('module-container-help');
             const managementUrl = document.getElementById('Module_ManagementUrl');
             const enabled = document.getElementById('Module_IsEnabled');
             const auditCommentField = document.getElementById('module-audit-comment-field');
             const auditComment = document.getElementById('module-audit-comment');
             const saveButton = document.getElementById('save-module');
+            const containersUrl = '@Url.Page("/Index", "Containers")';
+
+            const isDockerType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'docker';
+
+            const setContainerPlaceholder = (message, selectedContainerId = '') => {
+                container.replaceChildren();
+                const option = new Option(message, selectedContainerId);
+                option.selected = true;
+                container.add(option);
+            };
+
+            const loadContainers = async (selectedContainerId = '') => {
+                if (!host.value) {
+                    setContainerPlaceholder('Select a host to load containers', selectedContainerId);
+                    container.disabled = true;
+                    containerHelp.textContent = 'A host with a Docker-enabled agent is required.';
+                    return;
+                }
+
+                setContainerPlaceholder('Loading containers…');
+                container.disabled = true;
+                containerHelp.textContent = 'Loading containers live from the selected host…';
+                try {
+                    const response = await fetch(`${containersUrl}&hostId=${encodeURIComponent(host.value)}`);
+                    if (!response.ok) throw new Error('Container request failed');
+                    const containers = await response.json();
+                    container.replaceChildren(new Option('Select a container', ''));
+                    containers.forEach(item => {
+                        const label = `${item.name} — ${item.image} (${item.status})`;
+                        container.add(new Option(label, item.id));
+                    });
+                    if (selectedContainerId && !containers.some(item => item.id === selectedContainerId))
+                        container.add(new Option('Previously selected container (not currently found)', selectedContainerId));
+                    container.value = selectedContainerId;
+                    container.disabled = false;
+                    containerHelp.textContent = containers.length
+                        ? 'Containers loaded live from the selected host.'
+                        : 'No Docker containers were found on this host.';
+                }
+                catch {
+                    setContainerPlaceholder('Unable to load containers', selectedContainerId);
+                    container.disabled = false;
+                    containerHelp.textContent = 'The host agent could not load Docker containers. Check its Docker socket access.';
+                }
+            };
+
+            const syncModuleTypeFields = async (selectedContainerId = '') => {
+                const docker = isDockerType();
+                healthUrlField.classList.toggle('d-none', docker);
+                healthUrl.disabled = docker;
+                containerField.classList.toggle('d-none', !docker);
+                container.required = docker;
+                if (docker) {
+                    healthUrl.value = '';
+                    await loadContainers(selectedContainerId);
+                }
+                else {
+                    container.disabled = true;
+                    container.value = '';
+                }
+            };
 
             const setAuditCommentRequired = required => {
                 auditCommentField.classList.toggle('d-none', !required);
@@ -338,6 +415,7 @@ else {
                 title.textContent = 'Add module';
                 saveButton.textContent = 'Add module';
                 setAuditCommentRequired(false);
+                void syncModuleTypeFields();
             });
 
             document.querySelectorAll('.js-edit-module').forEach(button => {
@@ -354,10 +432,20 @@ else {
                     title.textContent = 'Edit module';
                     saveButton.textContent = 'Save changes';
                     setAuditCommentRequired(true);
+                    void syncModuleTypeFields(button.dataset.moduleContainerId ?? '');
                 });
             });
 
+            type.addEventListener('change', () => void syncModuleTypeFields());
+            host.addEventListener('change', () => {
+                if (isDockerType()) void loadContainers();
+            });
+
             form.addEventListener('submit', () => {
+                // A select is omitted from form data while disabled. Make sure the live
+                // Docker selection is posted even if a container refresh just completed.
+                if (isDockerType() && container.value)
+                    container.disabled = false;
                 saveButton.disabled = true;
                 saveButton.textContent = 'Saving…';
             });

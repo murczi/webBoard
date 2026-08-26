@@ -17,12 +17,17 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
                .HasMaxLength(maxLength: 64);
 
         builder.HasData(
-        new ModuleTypeEntity
-        {
-            Id = 1,
-            Name = "Http",
-            Description = "Http Module"
-        }
-        );
+            new ModuleTypeEntity
+            {
+                Id = 1,
+                Name = "Http",
+                Description = "Http Module"
+            },
+            new ModuleTypeEntity
+            {
+                Id = 2,
+                Name = "Docker",
+                Description = "Docker container"
+            });
     }
 }

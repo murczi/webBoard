@@ -54,6 +54,39 @@ public class ModuleManagementServiceTests {
         Assert.Contains("valid module type", exception.Message);
     }
 
+    [Fact]
+    public async Task AddAsync_ConfiguresDockerContainerInsteadOfHealthUrl() {
+        var repository = new FakeModuleRepository
+        {
+            ValidTypeId = 2,
+            ValidTypeName = "Docker",
+            ValidHostId = 4
+        };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 2;
+        module.HostId = 4;
+        module.ContainerId = "container-id";
+
+        await service.AddAsync(module, 1, "Test change");
+
+        Assert.Equal("container-id", module.ContainerId);
+        Assert.Null(module.HealthCheckUrl);
+    }
+
+    [Fact]
+    public async Task AddAsync_RequiresHostAndContainerForDockerModule() {
+        var repository = new FakeModuleRepository { ValidTypeId = 2, ValidTypeName = "Docker" };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 2;
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
+
+        Assert.Contains("host", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("ftp://example.test/health")]
     [InlineData("/relative/health")]
@@ -102,6 +135,7 @@ public class ModuleManagementServiceTests {
     private sealed class FakeModuleRepository : IModuleRepository {
         public List<ModuleModel> Modules { get; } = [];
         public int ValidTypeId { get; init; } = 1;
+        public string ValidTypeName { get; init; } = "Http";
         public int? ValidHostId { get; init; }
 
         public Task<IReadOnlyList<ModuleModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
@@ -118,8 +152,8 @@ public class ModuleManagementServiceTests {
         public Task<bool> HostExistsAsync(int hostId, CancellationToken cancellationToken = default) =>
             Task.FromResult(ValidHostId == hostId);
 
-        public Task<bool> TypeExistsAsync(int typeId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(ValidTypeId == typeId);
+        public Task<string?> GetTypeNameAsync(int typeId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(typeId == ValidTypeId ? ValidTypeName : null);
 
         public Task AddAsync(
             ModuleModel module,

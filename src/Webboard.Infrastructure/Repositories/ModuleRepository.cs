@@ -18,9 +18,11 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                 TypeName = module.Type != null ? module.Type.Name : string.Empty,
                 HostId = module.HostId,
                 HostName = module.Host != null ? module.Host.Name : null,
+                HostAgentBaseUrl = module.Host != null ? module.Host.AgentBaseUrl : null,
                 Name = module.FriendlyName,
                 Description = module.Description,
                 HealthCheckUrl = module.HealthCheckUrl,
+                ContainerId = module.ContainerId,
                 ManagementUrl = module.ManagementUrl,
                 IsEnabled = module.IsEnabled,
                 DateCreated = module.DateCreated,
@@ -44,8 +46,11 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
     public Task<bool> HostExistsAsync(int hostId, CancellationToken cancellationToken = default) =>
         dbContext.Hosts.AnyAsync(host => host.Id == hostId && !host.DeletionFlag, cancellationToken);
 
-    public Task<bool> TypeExistsAsync(int typeId, CancellationToken cancellationToken = default) =>
-        dbContext.ModuleTypes.AnyAsync(type => type.Id == typeId, cancellationToken);
+    public Task<string?> GetTypeNameAsync(int typeId, CancellationToken cancellationToken = default) =>
+        dbContext.ModuleTypes.AsNoTracking()
+            .Where(type => type.Id == typeId)
+            .Select(type => type.Name)
+            .SingleOrDefaultAsync(cancellationToken);
 
     public async Task AddAsync(
         ModuleModel module,
@@ -59,6 +64,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             FriendlyName = module.Name,
             Description = module.Description,
             HealthCheckUrl = module.HealthCheckUrl,
+            ContainerId = module.ContainerId,
             ManagementUrl = module.ManagementUrl,
             DeletionFlag = false,
             IsEnabled = module.IsEnabled,
@@ -93,6 +99,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(entity => entity.FriendlyName, module.Name)
                     .SetProperty(entity => entity.Description, module.Description)
                     .SetProperty(entity => entity.HealthCheckUrl, module.HealthCheckUrl)
+                    .SetProperty(entity => entity.ContainerId, module.ContainerId)
                     .SetProperty(entity => entity.ManagementUrl, module.ManagementUrl)
                     .SetProperty(entity => entity.IsEnabled, module.IsEnabled)
                     .SetProperty(entity => entity.DateUpdated, module.DateUpdated),

@@ -4,9 +4,8 @@
 to expose narrowly scoped host operations such as querying Docker and systemd,
 and running an allowlist of predefined commands.
 
-The project currently contains only the API foundation and a health endpoint.
-Host integrations and command endpoints will be added separately so their
-authorization and privilege boundaries can be designed deliberately.
+The agent exposes its own health and read-only Docker container discovery and
+status endpoints. Docker endpoints require access to the Docker Unix socket.
 
 ## Run locally
 
@@ -77,3 +76,5 @@ apply timeouts, cap output, and record an audit event for every invocation.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Confirms that the agent process is running. |
+| `GET` | `/docker/containers` | Lists containers from the mounted Docker socket. |
+| `GET` | `/docker/containers/{id}/status` | Returns the current state and health of a container. |

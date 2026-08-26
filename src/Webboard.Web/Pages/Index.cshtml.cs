@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 public class IndexModel(
     IModuleManagementService modules,
     IModuleHealthChecker healthChecker,
+    IHostManagementService hosts,
+    IDockerAgentClient dockerAgent,
     IAuditLogService auditLogs,
     JwtSessionService sessions) : PageModel {
     public IReadOnlyList<ModuleTileModel> ModuleTiles { get; private set; } = [];
@@ -45,7 +47,7 @@ public class IndexModel(
             var enabled = allModules.Where(module => module.IsEnabled).ToList();
             var checks = enabled.Select(async module => new ModuleTileModel(
                 module,
-                await healthChecker.CheckAsync(module.HealthCheckUrl, cancellationToken)));
+                await healthChecker.CheckAsync(module, cancellationToken)));
             ModuleTiles = await Task.WhenAll(checks);
         }
 
@@ -89,8 +91,11 @@ public class IndexModel(
             return Forbid();
         if (CurrentUserId is not int actorId)
             return Challenge();
+        // Audit comments are edit-only. The add form intentionally disables this field,
+        // so it must not participate in model validation for module creation.
+        ModelState.Remove(nameof(AuditComment));
         if (!ModelState.IsValid) {
-            TempData["ErrorMessage"] = "Check the module details and try again.";
+            TempData["ErrorMessage"] = GetModelStateErrorMessage();
             return RedirectToPage();
         }
 
@@ -110,7 +115,7 @@ public class IndexModel(
         if (CurrentUserId is not int actorId)
             return Challenge();
         if (!IsValidAuditComment() || !ModelState.IsValid) {
-            TempData["ErrorMessage"] = "Check the module details and try again.";
+            TempData["ErrorMessage"] = GetModelStateErrorMessage();
             return RedirectToPage();
         }
 
@@ -154,6 +159,30 @@ public class IndexModel(
             await auditLogs.GetModuleLogsAsync(moduleId, page, cancellationToken));
     }
 
+    public async Task<IActionResult> OnGetContainersAsync(
+        int hostId,
+        CancellationToken cancellationToken = default) {
+        if (!CanCreate && !CanUpdate)
+            return Forbid();
+
+        var host = (await hosts.GetAllAsync(cancellationToken))
+            .SingleOrDefault(candidate => candidate.Id == hostId && candidate.IsEnabled);
+        if (host is null)
+            return NotFound(new { error = "The selected host was not found or is disabled." });
+
+        try {
+            return new JsonResult(await dockerAgent.GetContainersAsync(
+                host.AgentBaseUrl,
+                cancellationToken));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+            return StatusCode(504, new { error = "The Docker container request timed out." });
+        }
+        catch (HttpRequestException) {
+            return StatusCode(502, new { error = "The host agent could not read Docker containers." });
+        }
+    }
+
     private bool IsValidAuditComment() {
         if (!string.IsNullOrWhiteSpace(AuditComment) &&
             AuditComment.Trim().Length <= AuditLogModel.MaxCommentLength)
@@ -163,6 +192,27 @@ public class IndexModel(
             nameof(AuditComment),
             $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.");
         return false;
+    }
+
+    private string GetModelStateErrorMessage() {
+        foreach (var (field, entry) in ModelState) {
+            var error = entry.Errors.FirstOrDefault();
+            if (error is null)
+                continue;
+
+            var fieldName = field switch {
+                nameof(AuditComment) => "Audit comment",
+                _ when field.StartsWith("Module.", StringComparison.Ordinal) =>
+                    field["Module.".Length..].Replace("Id", "", StringComparison.Ordinal).Trim(),
+                _ => field
+            };
+            var message = string.IsNullOrWhiteSpace(error.ErrorMessage)
+                ? $"The submitted value for {fieldName} is invalid."
+                : error.ErrorMessage;
+            return $"{fieldName}: {message}";
+        }
+
+        return "Check the module details and try again.";
     }
 
     public sealed record ModuleTileModel(ModuleModel Module, ModuleHealthResult Health);
@@ -187,6 +237,10 @@ public class IndexModel(
         [Display(Name = "Health-check URL")]
         public string? HealthCheckUrl { get; set; }
 
+        [StringLength(128)]
+        [Display(Name = "Docker container")]
+        public string? ContainerId { get; set; }
+
         [StringLength(2048), Url]
         [Display(Name = "Management URL")]
         public string? ManagementUrl { get; set; }
@@ -202,6 +256,7 @@ public class IndexModel(
             HostId = HostId,
             TypeId = TypeId,
             HealthCheckUrl = HealthCheckUrl,
+            ContainerId = ContainerId,
             ManagementUrl = ManagementUrl,
             IsEnabled = IsEnabled
         };

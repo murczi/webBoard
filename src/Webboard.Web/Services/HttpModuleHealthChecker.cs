@@ -4,10 +4,26 @@ using System.Diagnostics;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 
-public sealed class HttpModuleHealthChecker(HttpClient httpClient) : IModuleHealthChecker {
+public sealed class HttpModuleHealthChecker(
+    HttpClient httpClient,
+    IDockerAgentClient dockerAgent) : IModuleHealthChecker {
     public async Task<ModuleHealthResult> CheckAsync(
-        string? healthCheckUrl,
+        ModuleModel module,
         CancellationToken cancellationToken = default) {
+        if (string.Equals(module.TypeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
+            if (string.IsNullOrWhiteSpace(module.HostAgentBaseUrl) ||
+                string.IsNullOrWhiteSpace(module.ContainerId))
+                return new ModuleHealthResult(
+                    ModuleHealthState.NotConfigured,
+                    null,
+                    "Docker host or container is not configured");
+            return await dockerAgent.CheckContainerAsync(
+                module.HostAgentBaseUrl,
+                module.ContainerId,
+                cancellationToken);
+        }
+
+        var healthCheckUrl = module.HealthCheckUrl;
         if (string.IsNullOrWhiteSpace(healthCheckUrl))
             return new ModuleHealthResult(ModuleHealthState.NotConfigured, null, "No health check configured");
         if (!Uri.TryCreate(healthCheckUrl, UriKind.Absolute, out var uri) ||

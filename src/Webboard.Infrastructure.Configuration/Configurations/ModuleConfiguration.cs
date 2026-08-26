@@ -30,6 +30,9 @@ public class ModuleConfiguration : IEntityTypeConfiguration<ModuleEntity> {
         builder.Property(propertyExpression: module => module.HealthCheckUrl)
                .HasMaxLength(maxLength: 2048);
 
+        builder.Property(propertyExpression: module => module.ContainerId)
+               .HasMaxLength(maxLength: 128);
+
         builder.Property(propertyExpression: module => module.ManagementUrl)
                .HasMaxLength(maxLength: 2048);
 

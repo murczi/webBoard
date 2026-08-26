@@ -55,18 +55,33 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         CancellationToken cancellationToken) {
         module.Name = module.Name.Trim();
         module.Description = EmptyToNull(module.Description);
-        module.HealthCheckUrl = NormalizeOptionalUrl(module.HealthCheckUrl, "Health-check URL");
         module.ManagementUrl = NormalizeOptionalUrl(module.ManagementUrl, "Management URL");
 
         if (module.Name.Length is 0 or > 100)
             throw new ArgumentException("Module name must be between 1 and 100 characters.", nameof(module));
         if (module.Description?.Length > 1000)
             throw new ArgumentException("Description cannot exceed 1000 characters.", nameof(module));
-        if (!await repository.TypeExistsAsync(module.TypeId, cancellationToken))
+        var typeName = await repository.GetTypeNameAsync(module.TypeId, cancellationToken);
+        if (typeName is null)
             throw new ArgumentException("Select a valid module type.", nameof(module));
         if (module.HostId.HasValue &&
             !await repository.HostExistsAsync(module.HostId.Value, cancellationToken))
             throw new ArgumentException("Select a valid host or leave the host empty.", nameof(module));
+
+        if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
+            module.HealthCheckUrl = null;
+            module.ContainerId = EmptyToNull(module.ContainerId);
+            if (!module.HostId.HasValue)
+                throw new ArgumentException("Select a host for a Docker module.", nameof(module));
+            if (module.ContainerId is null)
+                throw new ArgumentException("Select a Docker container.", nameof(module));
+            if (module.ContainerId.Length > 128)
+                throw new ArgumentException("Docker container ID cannot exceed 128 characters.", nameof(module));
+        }
+        else {
+            module.HealthCheckUrl = NormalizeOptionalUrl(module.HealthCheckUrl, "Health-check URL");
+            module.ContainerId = null;
+        }
     }
 
     private static string? EmptyToNull(string? value) =>

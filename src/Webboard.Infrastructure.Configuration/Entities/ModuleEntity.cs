@@ -13,6 +13,8 @@ public class ModuleEntity {
 
     public string? HealthCheckUrl { get; set; }
 
+    public string? ContainerId { get; set; }
+
     public string? ManagementUrl { get; set; }
 
     public bool DeletionFlag { get; set; }
