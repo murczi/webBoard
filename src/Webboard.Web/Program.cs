@@ -1,11 +1,14 @@
 using DotNetEnv;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Webboard.Domain.Interfaces.Repositories;
 using Webboard.Domain.Interfaces.Services;
 using Webboard.Domain.Services;
 using Webboard.Infrastructure.Configuration;
 using Webboard.Infrastructure.Repositories;
+using Webboard.Web.Authentication;
 
 Env.NoClobber()
    .TraversePath()
@@ -22,14 +25,58 @@ builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
 
 builder.Services.AddScoped<IUserCrudAccessRepository, UserCrudAccessRepository>();
 builder.Services.AddScoped<IUserCrudAccessService, UserCrudAccessService>();
+builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
+builder.Services.AddScoped<JwtSessionService>();
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-       .AddCookie(configureOptions: options => {
-           options.LoginPath = "/Users";
-           options.AccessDeniedPath = "/Users";
-           options.ExpireTimeSpan = TimeSpan.FromHours(hours: 8);
-           options.SlidingExpiration = true;
-       });
+var jwtOptions = builder.Configuration
+    .GetSection(JwtOptions.SectionName)
+    .Get<JwtOptions>() ?? new JwtOptions();
+if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < 32)
+    throw new InvalidOperationException(
+        "Authentication:Jwt:SigningKey must be configured with at least 32 bytes.");
+if (jwtOptions.LifetimeHours <= 0 || jwtOptions.RememberMeDays <= 0)
+    throw new InvalidOperationException(
+        "JWT lifetime settings must be greater than zero.");
+
+builder.Services.Configure<JwtOptions>(
+    builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options => {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
+            NameClaimType = System.Security.Claims.ClaimTypes.Name,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context => {
+                context.Token = context.Request.Cookies[JwtOptions.CookieName];
+                return Task.CompletedTask;
+            },
+            OnChallenge = context => {
+                if (!context.Response.HasStarted &&
+                    HttpMethods.IsGet(context.Request.Method)) {
+                    context.HandleResponse();
+                    var returnUrl = context.Request.PathBase + context.Request.Path +
+                                    context.Request.QueryString;
+                    context.Response.Redirect(
+                        $"/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}");
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
 builder.Services.AddAuthorization();
 
 builder.Services.AddRazorPages();
