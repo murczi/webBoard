@@ -11,7 +11,8 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 [Authorize]
 public class IndexModel(
     IModuleManagementService modules,
-    IModuleHealthChecker healthChecker) : PageModel {
+    IModuleHealthChecker healthChecker,
+    JwtSessionService sessions) : PageModel {
     public IReadOnlyList<ModuleTileModel> ModuleTiles { get; private set; } = [];
     public IReadOnlyList<ModuleModel> HiddenModules { get; private set; } = [];
     public IReadOnlyList<ModuleOptionModel> Hosts { get; private set; } = [];
@@ -46,6 +47,32 @@ public class IndexModel(
             Hosts = await modules.GetHostsAsync(cancellationToken);
             Types = await modules.GetTypesAsync(cancellationToken);
         }
+    }
+
+    public async Task<IActionResult> OnPostRefreshAccessAsync(
+        CancellationToken cancellationToken) {
+        var userName = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(userName))
+            return Challenge();
+
+        var rememberMe = User.HasClaim(
+            JwtSessionService.RememberMeClaimType,
+            bool.TrueString.ToLowerInvariant());
+        var token = await sessions.RefreshTokenAsync(
+            userName,
+            rememberMe,
+            cancellationToken);
+        if (token is null) {
+            Response.Cookies.Delete(JwtOptions.CookieName, new CookieOptions { Path = "/" });
+            return RedirectToPage("/Login");
+        }
+
+        Response.Cookies.Append(
+            JwtOptions.CookieName,
+            token,
+            sessions.CreateCookieOptions(rememberMe));
+        TempData["StatusMessage"] = "Access refreshed.";
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostAddAsync(CancellationToken cancellationToken) {

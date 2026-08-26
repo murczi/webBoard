@@ -14,6 +14,7 @@ public sealed class JwtSessionService(
     IUserAuthenticationRepository users,
     IOptions<JwtOptions> options) {
     public const string AccessClaimType = "access";
+    public const string RememberMeClaimType = "remember_me";
 
     private readonly JwtOptions jwtOptions = options.Value;
     private readonly PasswordHasher<UserLoginModel> passwordHasher = new();
@@ -34,6 +35,18 @@ public sealed class JwtSessionService(
         if (!VerifyPassword(user, password))
             return null;
 
+        return CreateToken(user, rememberMe);
+    }
+
+    public async Task<string?> RefreshTokenAsync(
+        string userName,
+        bool rememberMe = false,
+        CancellationToken cancellationToken = default) {
+        var user = await users.FindByNameAsync(userName.Trim(), cancellationToken);
+        return user is null ? null : CreateToken(user, rememberMe);
+    }
+
+    private string CreateToken(UserLoginModel user, bool rememberMe) {
         var now = DateTime.UtcNow;
         var claims = new List<Claim>
         {
@@ -41,7 +54,8 @@ public sealed class JwtSessionService(
             new(JwtRegisteredClaimNames.UniqueName, user.Name),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.Name),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(RememberMeClaimType, rememberMe.ToString().ToLowerInvariant())
         };
 
         foreach (var access in user.Access) {
