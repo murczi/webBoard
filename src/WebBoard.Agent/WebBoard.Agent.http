@@ -1,0 +1,6 @@
+@WebBoard.Agent_HostAddress = http://localhost:5080
+
+GET {{WebBoard.Agent_HostAddress}}/health
+Accept: application/json
+
+###
