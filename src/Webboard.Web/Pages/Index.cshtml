@@ -1,10 +1,326 @@
 ﻿@page
 @model IndexModel
+@using Webboard.Domain.Model.Modules
 @{
     ViewData["Title"] = "Dashboard";
+    ViewData["FullWidth"] = true;
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome, @User.Identity?.Name</h1>
-    <p class="text-muted">Your Webboard session is active.</p>
+<div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-primary fw-semibold text-uppercase small mb-1">Overview</p>
+        <h1 class="h2 mb-1">Modules</h1>
+        <p class="text-muted mb-0">Your services and their current health at a glance.</p>
+    </div>
+    @if (Model.CanCreate) {
+        <button class="btn btn-primary align-self-start align-self-sm-center" type="button"
+                data-bs-toggle="modal" data-bs-target="#module-modal" data-module-action="add">
+            Add module
+        </button>
+    }
 </div>
+
+@if (TempData["StatusMessage"] is string statusMessage) {
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @statusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] is string errorMessage) {
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (!Model.CanRead) {
+    <div class="card border-0 shadow-sm module-empty-state">
+        <div class="card-body text-center py-5">
+            <h2 class="h5">Module access is not enabled</h2>
+            <p class="text-muted mb-0">Ask an administrator for module read access to view the dashboard.</p>
+        </div>
+    </div>
+}
+else if (Model.ModuleTiles.Count == 0) {
+    <div class="card border-0 shadow-sm module-empty-state">
+        <div class="card-body text-center py-5">
+            <h2 class="h5">No modules on the dashboard</h2>
+            <p class="text-muted mb-0">Enabled modules will appear here.</p>
+        </div>
+    </div>
+}
+else {
+    <div class="module-grid">
+        @foreach (var tile in Model.ModuleTiles) {
+            var dotClass = tile.Health.State switch {
+                ModuleHealthState.Healthy => "module-health-dot--healthy",
+                ModuleHealthState.Unhealthy => "module-health-dot--unhealthy",
+                _ => "module-health-dot--unknown"
+            };
+            <article class="card border-0 shadow-sm module-tile">
+                <div class="card-body d-flex flex-column">
+                    <div class="d-flex align-items-start justify-content-between gap-3">
+                        <h2 class="h5 mb-0 text-break">@tile.Module.Name</h2>
+                        <div class="module-health flex-shrink-0" title="@tile.Health.Message">
+                            <span class="module-health-dot @dotClass" aria-hidden="true"></span>
+                            <span class="small fw-semibold">
+                                @if (tile.Health.PingMilliseconds.HasValue) {
+                                    @($"{tile.Health.PingMilliseconds} ms")
+                                }
+                                else if (tile.Health.State == ModuleHealthState.NotConfigured) {
+                                    @:Not monitored
+                                }
+                                else {
+                                    @:Unavailable
+                                }
+                            </span>
+                        </div>
+                    </div>
+
+                    <p class="text-muted module-description @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "fst-italic" : "")">
+                        @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "No description" : tile.Module.Description)
+                    </p>
+
+                    <div class="d-flex align-items-end justify-content-between gap-3 mt-auto">
+                        <div class="small text-muted">
+                            <span class="module-type-badge">@tile.Module.TypeName</span>
+                            @if (!string.IsNullOrWhiteSpace(tile.Module.HostName)) {
+                                <span class="ms-2">@tile.Module.HostName</span>
+                            }
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            @if (!string.IsNullOrWhiteSpace(tile.Module.ManagementUrl)) {
+                                <a class="btn btn-sm btn-outline-primary" href="@tile.Module.ManagementUrl"
+                                   target="_blank" rel="noopener noreferrer">Open</a>
+                            }
+                            @if (Model.CanUpdate || Model.CanDelete) {
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-light module-actions-button" type="button"
+                                            data-bs-toggle="dropdown" aria-expanded="false"
+                                            aria-label="Actions for @tile.Module.Name">
+                                        <span aria-hidden="true">&#9776;</span>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        @if (Model.CanUpdate) {
+                                            <li>
+                                                <button type="button" class="dropdown-item js-edit-module"
+                                                        data-bs-toggle="modal" data-bs-target="#module-modal"
+                                                        data-module-id="@tile.Module.Id" data-module-name="@tile.Module.Name"
+                                                        data-module-description="@tile.Module.Description"
+                                                        data-module-host-id="@tile.Module.HostId"
+                                                        data-module-type-id="@tile.Module.TypeId"
+                                                        data-module-health-url="@tile.Module.HealthCheckUrl"
+                                                        data-module-management-url="@tile.Module.ManagementUrl"
+                                                        data-module-enabled="true">Edit module</button>
+                                            </li>
+                                        }
+                                        @if (Model.CanUpdate && Model.CanDelete) {
+                                            <li><hr class="dropdown-divider"/></li>
+                                        }
+                                        @if (Model.CanDelete) {
+                                            <li>
+                                                <form method="post" asp-page-handler="Delete"
+                                                      asp-route-moduleId="@tile.Module.Id"
+                                                      onsubmit="return confirm('Delete this module?');">
+                                                    <button type="submit" class="dropdown-item text-danger">Delete module</button>
+                                                </form>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@if (Model.HiddenModules.Count > 0) {
+    <section class="mt-5" aria-labelledby="hidden-modules-title">
+        <div class="mb-3">
+            <h2 class="h4 mb-1" id="hidden-modules-title">Hidden modules</h2>
+            <p class="text-muted mb-0">These modules are configured but not shown on the dashboard.</p>
+        </div>
+        <div class="module-grid">
+            @foreach (var module in Model.HiddenModules) {
+                <article class="card border-0 shadow-sm module-tile module-tile--hidden">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex align-items-start justify-content-between gap-3">
+                            <h3 class="h5 mb-0 text-break">@module.Name</h3>
+                            <span class="badge rounded-pill text-bg-secondary">Hidden</span>
+                        </div>
+                        <p class="text-muted module-description">
+                            @(string.IsNullOrWhiteSpace(module.Description) ? "No description" : module.Description)
+                        </p>
+                        <div class="d-flex align-items-end justify-content-between gap-3 mt-auto">
+                            <div class="small text-muted">
+                                <span class="module-type-badge">@module.TypeName</span>
+                                @if (!string.IsNullOrWhiteSpace(module.HostName)) {
+                                    <span class="ms-2">@module.HostName</span>
+                                }
+                            </div>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-light module-actions-button" type="button"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        aria-label="Actions for @module.Name">
+                                    <span aria-hidden="true">&#9776;</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                    @if (Model.CanUpdate) {
+                                        <li>
+                                            <button type="button" class="dropdown-item js-edit-module"
+                                                    data-bs-toggle="modal" data-bs-target="#module-modal"
+                                                    data-module-id="@module.Id" data-module-name="@module.Name"
+                                                    data-module-description="@module.Description"
+                                                    data-module-host-id="@module.HostId"
+                                                    data-module-type-id="@module.TypeId"
+                                                    data-module-health-url="@module.HealthCheckUrl"
+                                                    data-module-management-url="@module.ManagementUrl"
+                                                    data-module-enabled="false">Edit module</button>
+                                        </li>
+                                    }
+                                    @if (Model.CanUpdate && Model.CanDelete) {
+                                        <li><hr class="dropdown-divider"/></li>
+                                    }
+                                    @if (Model.CanDelete) {
+                                        <li>
+                                            <form method="post" asp-page-handler="Delete" asp-route-moduleId="@module.Id"
+                                                  onsubmit="return confirm('Delete this module?');">
+                                                <button type="submit" class="dropdown-item text-danger">Delete module</button>
+                                            </form>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.CanCreate || Model.CanUpdate) {
+    <div class="modal fade" id="module-modal" tabindex="-1" aria-labelledby="module-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <form method="post" asp-page-handler="Add" id="module-form">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5" id="module-modal-title">Add module</h2>
+                            <p class="text-muted small mb-0">Configure a service to display on the dashboard.</p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input asp-for="Module.Id" type="hidden"/>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label asp-for="Module.Name" class="form-label"></label>
+                                <input asp-for="Module.Name" class="form-control" autocomplete="off"
+                                       placeholder="Status page"/>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Module.Description" class="form-label"></label>
+                                <textarea asp-for="Module.Description" class="form-control" rows="3"
+                                          placeholder="A short description of this module"></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Module.HostId" class="form-label"></label>
+                                <select asp-for="Module.HostId" class="form-select">
+                                    <option value="">No host (HTTP/S site)</option>
+                                    @foreach (var host in Model.Hosts) {
+                                        <option value="@host.Id">@host.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Module.TypeId" class="form-label"></label>
+                                <select asp-for="Module.TypeId" class="form-select" required>
+                                    @foreach (var type in Model.Types) {
+                                        <option value="@type.Id">@type.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Module.HealthCheckUrl" class="form-label"></label>
+                                <input asp-for="Module.HealthCheckUrl" class="form-control" type="url"
+                                       placeholder="https://service.example/health"/>
+                                <div class="form-text">Optional. A successful HTTP response is shown as healthy.</div>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Module.ManagementUrl" class="form-label"></label>
+                                <input asp-for="Module.ManagementUrl" class="form-control" type="url"
+                                       placeholder="https://service.example"/>
+                                <div class="form-text">Optional. Adds an Open button to the module tile.</div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input asp-for="Module.IsEnabled" class="form-check-input"/>
+                                    <label asp-for="Module.IsEnabled" class="form-check-label"></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="save-module">Add module</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        (() => {
+            const form = document.getElementById('module-form');
+            if (!form) return;
+
+            const title = document.getElementById('module-modal-title');
+            const id = document.getElementById('Module_Id');
+            const name = document.getElementById('Module_Name');
+            const description = document.getElementById('Module_Description');
+            const host = document.getElementById('Module_HostId');
+            const type = document.getElementById('Module_TypeId');
+            const healthUrl = document.getElementById('Module_HealthCheckUrl');
+            const managementUrl = document.getElementById('Module_ManagementUrl');
+            const enabled = document.getElementById('Module_IsEnabled');
+            const saveButton = document.getElementById('save-module');
+
+            document.querySelector('[data-module-action="add"]')?.addEventListener('click', () => {
+                form.action = '@Url.Page("/Index", "Add")';
+                form.reset();
+                id.value = '0';
+                host.value = '';
+                enabled.checked = true;
+                title.textContent = 'Add module';
+                saveButton.textContent = 'Add module';
+            });
+
+            document.querySelectorAll('.js-edit-module').forEach(button => {
+                button.addEventListener('click', () => {
+                    form.action = '@Url.Page("/Index", "Update")';
+                    id.value = button.dataset.moduleId;
+                    name.value = button.dataset.moduleName;
+                    description.value = button.dataset.moduleDescription ?? '';
+                    host.value = button.dataset.moduleHostId ?? '';
+                    type.value = button.dataset.moduleTypeId;
+                    healthUrl.value = button.dataset.moduleHealthUrl ?? '';
+                    managementUrl.value = button.dataset.moduleManagementUrl ?? '';
+                    enabled.checked = button.dataset.moduleEnabled === 'true';
+                    title.textContent = 'Edit module';
+                    saveButton.textContent = 'Save changes';
+                });
+            });
+
+            form.addEventListener('submit', () => {
+                saveButton.disabled = true;
+                saveButton.textContent = 'Saving…';
+            });
+        })();
+    </script>
+}

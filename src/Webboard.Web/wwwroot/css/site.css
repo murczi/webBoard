@@ -118,6 +118,91 @@ body {
     line-height: 1;
 }
 
+.module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    gap: 1.25rem;
+}
+
+.module-tile,
+.module-empty-state {
+    border-radius: 1rem;
+}
+
+.module-tile {
+    min-height: 210px;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.module-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .75rem 1.75rem rgba(31, 42, 68, .12) !important;
+}
+
+.module-tile--hidden {
+    min-height: 180px;
+    opacity: .82;
+}
+
+.module-tile .card-body {
+    padding: 1.35rem;
+}
+
+.module-health {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    color: #445066;
+    white-space: nowrap;
+}
+
+.module-health-dot {
+    width: .7rem;
+    height: .7rem;
+    border-radius: 50%;
+    box-shadow: 0 0 0 .2rem rgba(108, 117, 125, .12);
+}
+
+.module-health-dot--healthy {
+    background: #198754;
+    box-shadow: 0 0 0 .2rem rgba(25, 135, 84, .13);
+}
+
+.module-health-dot--unhealthy {
+    background: #dc3545;
+    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .13);
+}
+
+.module-health-dot--unknown {
+    background: #8b95a5;
+}
+
+.module-description {
+    margin: 1.2rem 0 1.5rem;
+    overflow-wrap: anywhere;
+}
+
+.module-type-badge {
+    display: inline-block;
+    padding: .2rem .5rem;
+    border-radius: .4rem;
+    color: #445066;
+    background: #edf1f6;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.module-actions-button {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid #e3e7ee;
+    color: #445066;
+    line-height: 1;
+}
+
 .user-table-responsive {
     overflow: visible;
 }

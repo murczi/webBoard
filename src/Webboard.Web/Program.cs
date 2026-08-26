@@ -28,9 +28,18 @@ builder.Services.AddScoped<IUserCrudAccessService, UserCrudAccessService>();
 builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
 builder.Services.AddScoped<IHostRepository, HostRepository>();
 builder.Services.AddScoped<IHostManagementService, HostManagementService>();
+builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
+builder.Services.AddScoped<IModuleManagementService, ModuleManagementService>();
 builder.Services.AddScoped<JwtSessionService>();
 builder.Services
     .AddHttpClient<IAgentHealthChecker, Webboard.Web.Services.AgentHealthChecker>(client =>
+        client.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    });
+builder.Services
+    .AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client =>
         client.Timeout = TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
