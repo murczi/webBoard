@@ -273,6 +273,14 @@ public class IndexModel(
         [Display(Name = "systemd service")]
         public string? ServiceName { get; set; }
 
+        [StringLength(253)]
+        [Display(Name = "Minecraft server address")]
+        public string? MinecraftServerAddress { get; set; }
+
+        [Range(1, 65535)]
+        [Display(Name = "Minecraft server port")]
+        public int? MinecraftServerPort { get; set; }
+
         [StringLength(2048), Url]
         [Display(Name = "Management URL")]
         public string? ManagementUrl { get; set; }
@@ -290,6 +298,8 @@ public class IndexModel(
             HealthCheckUrl = HealthCheckUrl,
             ContainerId = ContainerId,
             ServiceName = ServiceName,
+            MinecraftServerAddress = MinecraftServerAddress,
+            MinecraftServerPort = MinecraftServerPort,
             ManagementUrl = ManagementUrl,
             IsEnabled = IsEnabled
         };

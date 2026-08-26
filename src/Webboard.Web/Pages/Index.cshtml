@@ -68,6 +68,10 @@ else {
                                 @if (string.Equals(tile.Module.TypeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
                                     @tile.Health.Message
                                 }
+                                else if (string.Equals(tile.Module.TypeName, "Minecraft", StringComparison.OrdinalIgnoreCase) &&
+                                         tile.Health.PingMilliseconds.HasValue) {
+                                    @($"{tile.Health.PingMilliseconds} ms · {tile.Health.Message}")
+                                }
                                 else if (tile.Health.PingMilliseconds.HasValue) {
                                     @($"{tile.Health.PingMilliseconds} ms")
                                 }
@@ -116,6 +120,8 @@ else {
                                                         data-module-health-url="@tile.Module.HealthCheckUrl"
                                                         data-module-container-id="@tile.Module.ContainerId"
                                                         data-module-service-name="@tile.Module.ServiceName"
+                                                        data-module-minecraft-address="@tile.Module.MinecraftServerAddress"
+                                                        data-module-minecraft-port="@tile.Module.MinecraftServerPort"
                                                         data-module-management-url="@tile.Module.ManagementUrl"
                                                         data-module-enabled="true">Edit module</button>
                                             </li>
@@ -192,6 +198,8 @@ else {
                                                     data-module-health-url="@module.HealthCheckUrl"
                                                     data-module-container-id="@module.ContainerId"
                                                     data-module-service-name="@module.ServiceName"
+                                                    data-module-minecraft-address="@module.MinecraftServerAddress"
+                                                    data-module-minecraft-port="@module.MinecraftServerPort"
                                                     data-module-management-url="@module.ManagementUrl"
                                                     data-module-enabled="false">Edit module</button>
                                         </li>
@@ -249,7 +257,7 @@ else {
                                 <textarea asp-for="Module.Description" class="form-control" rows="3"
                                           placeholder="A short description of this module"></textarea>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6" id="module-host-field">
                                 <label asp-for="Module.HostId" class="form-label"></label>
                                 <div class="input-group input-group-sm searchable-select-search mb-2">
                                     <span class="input-group-text" aria-hidden="true">&#128269;</span>
@@ -258,13 +266,13 @@ else {
                                     <span class="input-group-text search-result-count" data-search-count="Module_HostId"></span>
                                 </div>
                                 <select asp-for="Module.HostId" class="form-select">
-                                    <option value="">No host (HTTP/S site)</option>
+                                    <option value="">No host (HTTP/S or Minecraft)</option>
                                     @foreach (var host in Model.Hosts) {
                                         <option value="@host.Id">@host.Name</option>
                                     }
                                 </select>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6" id="module-type-field">
                                 <label asp-for="Module.TypeId" class="form-label"></label>
                                 <div class="input-group input-group-sm searchable-select-search mb-2">
                                     <span class="input-group-text" aria-hidden="true">&#128269;</span>
@@ -312,6 +320,23 @@ else {
                                 </select>
                                 <div class="form-text" id="module-service-help">
                                     Services are loaded live from the selected host's agent.
+                                </div>
+                            </div>
+                            <div class="col-12 d-none" id="module-minecraft-field">
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <label asp-for="Module.MinecraftServerAddress" class="form-label"></label>
+                                        <input asp-for="Module.MinecraftServerAddress" class="form-control"
+                                               placeholder="minecraft.example.com" disabled/>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="Module.MinecraftServerPort" class="form-label"></label>
+                                        <input asp-for="Module.MinecraftServerPort" class="form-control" type="number"
+                                               min="1" max="65535" value="25565" disabled/>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="form-text">Minecraft Java Edition server-list ping. DNS SRV records are not resolved; enter the actual port.</div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -363,7 +388,9 @@ else {
             const name = document.getElementById('Module_Name');
             const description = document.getElementById('Module_Description');
             const host = document.getElementById('Module_HostId');
+            const hostField = document.getElementById('module-host-field');
             const type = document.getElementById('Module_TypeId');
+            const typeField = document.getElementById('module-type-field');
             const healthUrl = document.getElementById('Module_HealthCheckUrl');
             const healthUrlField = document.getElementById('module-health-url-field');
             const containerField = document.getElementById('module-container-field');
@@ -372,6 +399,9 @@ else {
             const serviceField = document.getElementById('module-service-field');
             const service = document.getElementById('Module_ServiceName');
             const serviceHelp = document.getElementById('module-service-help');
+            const minecraftField = document.getElementById('module-minecraft-field');
+            const minecraftAddress = document.getElementById('Module_MinecraftServerAddress');
+            const minecraftPort = document.getElementById('Module_MinecraftServerPort');
             const managementUrl = document.getElementById('Module_ManagementUrl');
             const enabled = document.getElementById('Module_IsEnabled');
             const auditCommentField = document.getElementById('module-audit-comment-field');
@@ -384,6 +414,8 @@ else {
                 type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'docker';
             const isSystemdType = () =>
                 type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'systemd';
+            const isMinecraftType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'minecraft';
 
             const updateSearch = selectId => {
                 const select = document.getElementById(selectId);
@@ -500,15 +532,28 @@ else {
                 }
             };
 
-            const syncModuleTypeFields = async (selectedContainerId = '', selectedServiceName = '') => {
+            const syncModuleTypeFields = async (
+                selectedContainerId = '',
+                selectedServiceName = '',
+                selectedMinecraftAddress = '',
+                selectedMinecraftPort = '') => {
                 const docker = isDockerType();
                 const systemd = isSystemdType();
-                healthUrlField.classList.toggle('d-none', docker || systemd);
-                healthUrl.disabled = docker || systemd;
+                const minecraft = isMinecraftType();
+                hostField.classList.toggle('d-none', minecraft);
+                typeField.classList.toggle('col-md-6', !minecraft);
+                typeField.classList.toggle('col-12', minecraft);
+                healthUrlField.classList.toggle('d-none', docker || systemd || minecraft);
+                healthUrl.disabled = docker || systemd || minecraft;
                 containerField.classList.toggle('d-none', !docker);
                 container.required = docker;
                 serviceField.classList.toggle('d-none', !systemd);
                 service.required = systemd;
+                minecraftField.classList.toggle('d-none', !minecraft);
+                minecraftAddress.disabled = !minecraft;
+                minecraftAddress.required = minecraft;
+                minecraftPort.disabled = !minecraft;
+                minecraftPort.required = minecraft;
                 if (docker) {
                     healthUrl.value = '';
                     service.disabled = true;
@@ -521,11 +566,23 @@ else {
                     container.value = '';
                     await loadServices(selectedServiceName);
                 }
+                else if (minecraft) {
+                    host.value = '';
+                    healthUrl.value = '';
+                    container.disabled = true;
+                    container.value = '';
+                    service.disabled = true;
+                    service.value = '';
+                    minecraftAddress.value = selectedMinecraftAddress;
+                    minecraftPort.value = selectedMinecraftPort || '25565';
+                }
                 else {
                     container.disabled = true;
                     container.value = '';
                     service.disabled = true;
                     service.value = '';
+                    minecraftAddress.value = '';
+                    minecraftPort.value = '25565';
                 }
             };
 
@@ -570,7 +627,9 @@ else {
                         .forEach(updateSearch);
                     void syncModuleTypeFields(
                         button.dataset.moduleContainerId ?? '',
-                        button.dataset.moduleServiceName ?? '');
+                        button.dataset.moduleServiceName ?? '',
+                        button.dataset.moduleMinecraftAddress ?? '',
+                        button.dataset.moduleMinecraftPort ?? '');
                 });
             });
 

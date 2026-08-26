@@ -45,6 +45,9 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
             return Forbid();
         if (CurrentUserId is not int actorId)
             return Challenge();
+        // Audit comments are edit-only. The add form disables this field, so it must
+        // not participate in model validation when a host is created.
+        ModelState.Remove(nameof(AuditComment));
         if (!ModelState.IsValid) {
             SetValidationError();
             return RedirectToPage();

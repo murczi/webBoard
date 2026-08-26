@@ -141,6 +141,65 @@ public class ModuleManagementServiceTests {
         Assert.Contains("valid systemd service", exception.Message);
     }
 
+    [Fact]
+    public async Task AddAsync_ConfiguresMinecraftServerInsteadOfOtherChecks() {
+        var repository = new FakeModuleRepository
+        {
+            ValidTypeId = 4,
+            ValidTypeName = "Minecraft"
+        };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 4;
+        module.HostId = 99;
+        module.MinecraftServerAddress = "mc.example.test";
+        module.MinecraftServerPort = 25565;
+
+        await service.AddAsync(module, 1, "Test change");
+
+        Assert.Equal("mc.example.test", module.MinecraftServerAddress);
+        Assert.Equal(25565, module.MinecraftServerPort);
+        Assert.Null(module.HostId);
+        Assert.Null(module.HealthCheckUrl);
+        Assert.Null(module.ContainerId);
+        Assert.Null(module.ServiceName);
+    }
+
+    [Fact]
+    public async Task AddAsync_AllowsMinecraftModuleWithoutHost() {
+        var repository = new FakeModuleRepository { ValidTypeId = 4, ValidTypeName = "Minecraft" };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 4;
+        module.MinecraftServerAddress = "mc.example.test";
+        module.MinecraftServerPort = 25565;
+
+        await service.AddAsync(module, 1, "Test change");
+
+        Assert.Null(module.HostId);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(65536)]
+    public async Task AddAsync_RejectsInvalidMinecraftPort(int port) {
+        var repository = new FakeModuleRepository
+        {
+            ValidTypeId = 4,
+            ValidTypeName = "Minecraft"
+        };
+        var service = new ModuleManagementService(repository);
+        var module = NewModule();
+        module.TypeId = 4;
+        module.MinecraftServerAddress = "mc.example.test";
+        module.MinecraftServerPort = port;
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddAsync(module, 1, "Test change"));
+
+        Assert.Contains("port", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("ftp://example.test/health")]
     [InlineData("/relative/health")]

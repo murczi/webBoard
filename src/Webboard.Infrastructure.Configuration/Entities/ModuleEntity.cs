@@ -17,6 +17,10 @@ public class ModuleEntity {
 
     public string? ServiceName { get; set; }
 
+    public string? MinecraftServerAddress { get; set; }
+
+    public int? MinecraftServerPort { get; set; }
+
     public string? ManagementUrl { get; set; }
 
     public bool DeletionFlag { get; set; }

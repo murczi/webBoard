@@ -7,7 +7,8 @@ using Domain.Model.Modules;
 public sealed class HttpModuleHealthChecker(
     HttpClient httpClient,
     IDockerAgentClient dockerAgent,
-    ISystemdAgentClient systemdAgent) : IModuleHealthChecker {
+    ISystemdAgentClient systemdAgent,
+    IMinecraftStatusClient minecraftStatus) : IModuleHealthChecker {
     public async Task<ModuleHealthResult> CheckAsync(
         ModuleModel module,
         CancellationToken cancellationToken = default) {
@@ -34,6 +35,19 @@ public sealed class HttpModuleHealthChecker(
             return await systemdAgent.CheckServiceAsync(
                 module.HostAgentBaseUrl,
                 module.ServiceName,
+                cancellationToken);
+        }
+
+        if (string.Equals(module.TypeName, "Minecraft", StringComparison.OrdinalIgnoreCase)) {
+            if (string.IsNullOrWhiteSpace(module.MinecraftServerAddress) ||
+                module.MinecraftServerPort is null)
+                return new ModuleHealthResult(
+                    ModuleHealthState.NotConfigured,
+                    null,
+                    "Minecraft address or port is not configured");
+            return await minecraftStatus.CheckServerAsync(
+                module.MinecraftServerAddress,
+                module.MinecraftServerPort.Value,
                 cancellationToken);
         }
 

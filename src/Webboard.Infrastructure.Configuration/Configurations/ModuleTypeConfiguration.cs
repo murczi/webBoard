@@ -34,6 +34,12 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
                 Id = 3,
                 Name = "Systemd",
                 Description = "systemd service"
+            },
+            new ModuleTypeEntity
+            {
+                Id = 4,
+                Name = "Minecraft",
+                Description = "Minecraft Java Edition server"
             });
     }
 }

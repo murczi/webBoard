@@ -12,6 +12,8 @@ public class ModuleModel {
     public string? HealthCheckUrl { get; set; }
     public string? ContainerId { get; set; }
     public string? ServiceName { get; set; }
+    public string? MinecraftServerAddress { get; set; }
+    public int? MinecraftServerPort { get; set; }
     public string? ManagementUrl { get; set; }
     public bool IsEnabled { get; set; }
     public DateTimeOffset DateCreated { get; set; }

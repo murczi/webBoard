@@ -1,7 +1,7 @@
 # WebBoard.Agent
 
 `WebBoard.Agent` is the host-side HTTP API used by `Webboard.Web`. It is intended
-to expose narrowly scoped host operations such as querying Docker and systemd,
+to expose narrowly scoped host operations such as querying Docker and systemd
 and running an allowlist of predefined commands.
 
 The agent exposes its own health plus read-only Docker and systemd discovery and

@@ -46,6 +46,7 @@ builder.Services
 builder.Services
     .AddHttpClient<ISystemdAgentClient, Webboard.Web.Services.SystemdAgentClient>(client =>
         client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddSingleton<IMinecraftStatusClient, Webboard.Web.Services.MinecraftStatusClient>();
 builder.Services
     .AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client =>
         client.Timeout = TimeSpan.FromSeconds(5))

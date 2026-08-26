@@ -65,12 +65,15 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         if (typeName is null)
             throw new ArgumentException("Select a valid module type.", nameof(module));
         if (module.HostId.HasValue &&
+            !string.Equals(typeName, "Minecraft", StringComparison.OrdinalIgnoreCase) &&
             !await repository.HostExistsAsync(module.HostId.Value, cancellationToken))
             throw new ArgumentException("Select a valid host or leave the host empty.", nameof(module));
 
         if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
             module.HealthCheckUrl = null;
             module.ServiceName = null;
+            module.MinecraftServerAddress = null;
+            module.MinecraftServerPort = null;
             module.ContainerId = EmptyToNull(module.ContainerId);
             if (!module.HostId.HasValue)
                 throw new ArgumentException("Select a host for a Docker module.", nameof(module));
@@ -82,6 +85,8 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         else if (string.Equals(typeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
             module.HealthCheckUrl = null;
             module.ContainerId = null;
+            module.MinecraftServerAddress = null;
+            module.MinecraftServerPort = null;
             module.ServiceName = EmptyToNull(module.ServiceName);
             if (!module.HostId.HasValue)
                 throw new ArgumentException("Select a host for a systemd module.", nameof(module));
@@ -90,10 +95,25 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
             if (!IsValidSystemdServiceName(module.ServiceName))
                 throw new ArgumentException("Select a valid systemd service.", nameof(module));
         }
+        else if (string.Equals(typeName, "Minecraft", StringComparison.OrdinalIgnoreCase)) {
+            module.HealthCheckUrl = null;
+            module.ContainerId = null;
+            module.ServiceName = null;
+            module.HostId = null;
+            module.MinecraftServerAddress = EmptyToNull(module.MinecraftServerAddress);
+            if (module.MinecraftServerAddress is null)
+                throw new ArgumentException("Enter a Minecraft server address.", nameof(module));
+            if (!IsValidMinecraftAddress(module.MinecraftServerAddress))
+                throw new ArgumentException("Enter a valid Minecraft server address.", nameof(module));
+            if (module.MinecraftServerPort is < 1 or > 65535)
+                throw new ArgumentException("Minecraft server port must be between 1 and 65535.", nameof(module));
+        }
         else {
             module.HealthCheckUrl = NormalizeOptionalUrl(module.HealthCheckUrl, "Health-check URL");
             module.ContainerId = null;
             module.ServiceName = null;
+            module.MinecraftServerAddress = null;
+            module.MinecraftServerPort = null;
         }
     }
 
@@ -105,6 +125,12 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         value.EndsWith(".service", StringComparison.OrdinalIgnoreCase) &&
         value.All(character => char.IsAsciiLetterOrDigit(character) ||
             character is '_' or '.' or '@' or ':' or '\\' or '-');
+
+    private static bool IsValidMinecraftAddress(string value) =>
+        value.Length <= 253 &&
+        !value.Any(char.IsWhiteSpace) &&
+        !value.Contains('/') &&
+        !value.Contains('\\');
 
     private static string? NormalizeOptionalUrl(string? value, string label) {
         var candidate = EmptyToNull(value);
