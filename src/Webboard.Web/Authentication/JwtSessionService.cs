@@ -99,11 +99,13 @@ public sealed class JwtSessionService(
             cancellationToken);
     }
 
-    public CookieOptions CreateCookieOptions(bool rememberMe = false) {
+    public CookieOptions CreateCookieOptions(
+        bool rememberMe = false,
+        bool secure = true) {
         var options = new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = secure,
             SameSite = SameSiteMode.Strict,
             IsEssential = true,
             Path = "/"

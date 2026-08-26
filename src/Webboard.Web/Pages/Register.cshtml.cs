@@ -40,7 +40,7 @@ public class RegisterModel(JwtSessionService sessions) : PageModel {
         Response.Cookies.Append(
             JwtOptions.CookieName,
             token,
-            sessions.CreateCookieOptions(Input.RememberMe));
+            sessions.CreateCookieOptions(Input.RememberMe, Request.IsHttps));
         return LocalRedirect(GetSafeReturnUrl());
     }
 

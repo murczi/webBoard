@@ -38,7 +38,7 @@ public class LoginModel(JwtSessionService sessions) : PageModel {
         Response.Cookies.Append(
             JwtOptions.CookieName,
             token,
-            sessions.CreateCookieOptions(Input.RememberMe));
+            sessions.CreateCookieOptions(Input.RememberMe, Request.IsHttps));
         return LocalRedirect(GetSafeReturnUrl());
     }
 
@@ -46,7 +46,7 @@ public class LoginModel(JwtSessionService sessions) : PageModel {
         Response.Cookies.Delete(JwtOptions.CookieName, new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = Request.IsHttps,
             SameSite = SameSiteMode.Strict,
             Path = "/"
         });
