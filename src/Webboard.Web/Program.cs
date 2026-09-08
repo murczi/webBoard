@@ -16,6 +16,22 @@ Env.NoClobber()
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Run schema updates explicitly from the published image, without starting HTTP.
+if (args.Contains("--migrate")) {
+    var connectionString = builder.Configuration.GetConnectionString("WebboardDatabase");
+    if (string.IsNullOrWhiteSpace(connectionString))
+        throw new InvalidOperationException(
+            "Connection string 'WebboardDatabase' is not configured.");
+
+    var options = new DbContextOptionsBuilder<WebboardDbContext>()
+        .UseNpgsql(connectionString)
+        .Options;
+    await using var database = new WebboardDbContext(options);
+    await database.Database.MigrateAsync();
+    Console.WriteLine("Database migrations completed.");
+    return;
+}
+
 // Add services to the container.
 builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
     options.UseNpgsql(

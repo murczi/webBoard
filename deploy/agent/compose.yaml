@@ -1,0 +1,26 @@
+services:
+  agent:
+    image: shujidev/webboard-agent:latest
+    restart: unless-stopped
+    ports:
+      - "10.0.0.30:5080:8080"
+    group_add:
+      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /run/dbus/system_bus_socket
+        target: /run/dbus/system_bus_socket
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /run/systemd/system
+        target: /run/systemd/system
+        read_only: true
+        bind:
+          create_host_path: false

@@ -76,3 +76,19 @@ jobs:
             echo "- shujidev/webboard:$IMAGE_VERSION"
             echo "- shujidev/webboard-agent:$IMAGE_VERSION"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update latest tags for the current main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$main_sha" != "$GITHUB_SHA" ]; then
+            echo 'Skipping latest: this commit is no longer the head of main.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          docker tag "shujidev/webboard:$IMAGE_VERSION" shujidev/webboard:latest
+          docker tag "shujidev/webboard-agent:$IMAGE_VERSION" shujidev/webboard-agent:latest
+          docker push shujidev/webboard:latest
+          docker push shujidev/webboard-agent:latest
+          echo "Updated both latest tags to $IMAGE_VERSION." >> "$GITHUB_STEP_SUMMARY"

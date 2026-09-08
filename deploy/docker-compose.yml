@@ -1,3 +1,5 @@
+# Configure credentials, image versions, and ports directly in this file.
+# Replace the database password in BOTH places below; keep real credentials private.
 services:
   database:
     image: postgres:18.4-alpine
@@ -5,12 +7,12 @@ services:
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: dashboard
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: "REPLACE_WITH_DATABASE_PASSWORD"
 
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:5432:5432"
 
     volumes:
       - dashboard-postgres-data:/var/lib/postgresql
@@ -22,25 +24,25 @@ services:
       retries: 10
 
   ui:
-    image: shujidev/webboard:${WEBBOARD_VERSION:-1.0}
+    image: shujidev/webboard:latest
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}'
-      Authentication__Jwt__SigningKey: ${Authentication__Jwt__SigningKey:?Set a random signing key of at least 32 bytes in .env}
+      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      Authentication__Jwt__SigningKey: "" # Required: paste output of openssl rand -hex 32
     ports:
-      - "127.0.0.1:${WEBBOARD_PORT:-8080}:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       database:
         condition: service_healthy
 
   agent:
-    image: shujidev/webboard-agent:${WEBBOARD_VERSION:-1.0}
+    image: shujidev/webboard-agent:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${AGENT_PORT:-5080}:8080"
+      - "127.0.0.1:5080:8080"
     group_add:
-      - "${DOCKER_GID:?Set DOCKER_GID to the host Docker socket group ID}"
+      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
     volumes:
       - type: bind
         source: /var/run/docker.sock

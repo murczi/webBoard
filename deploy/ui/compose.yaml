@@ -1,0 +1,11 @@
+services:
+  ui:
+    image: shujidev/webboard:latest
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Replace with the database machine's private DNS name/IP and credentials.
+      ConnectionStrings__WebboardDatabase: 'Host=db.internal;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      Authentication__Jwt__SigningKey: "" # Paste output of openssl rand -hex 32
+    ports:
+      - "127.0.0.1:8080:8080"

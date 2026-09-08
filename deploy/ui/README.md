@@ -1,56 +1,82 @@
 # Webboard UI
 
-The UI image is `shujidev/webboard:<version>`. Its Dockerfile and ignore file
-live here. See the [main README](../../README.md) for the full stack and CI/CD,
-and the [agent README](../agent/README.md) for host monitoring.
+Run `shujidev/webboard:latest` on the machine serving the web UI. The database
+and agents can run on other machines. You only need Docker with Compose;
+no repository clone, .NET SDK, or `.env` is required.
 
-## Docker Compose
+[Deployment overview](../../README.md) · [Database setup](../database/README.md) ·
+[Agent setup](../agent/README.md)
 
-From the repository root, configure `.env` using the
-[full-stack setup](../../README.md#docker-compose) first, including database
-migrations. Then start just the UI and its PostgreSQL dependency:
+## Compose file
 
-```sh
-docker compose --env-file .env -f deploy/docker-compose.yml up -d database ui
-docker compose --env-file .env -f deploy/docker-compose.yml logs -f ui
+Create a directory on the UI machine and save this as `compose.yaml`
+(or download the [Compose file](compose.yaml)):
+
+```yaml
+services:
+  ui:
+    image: shujidev/webboard:latest
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Replace with the database machine's private DNS name/IP and credentials.
+      ConnectionStrings__WebboardDatabase: 'Host=db.internal;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      Authentication__Jwt__SigningKey: "" # Paste output of openssl rand -hex 32
+    ports:
+      - "127.0.0.1:8080:8080"
 ```
 
-The shared Compose file also defines the agent, so its `DOCKER_GID` variable
-must be set even when starting only the UI. No agent sockets are mounted
-unless the agent service is started.
+Replace `db.internal` with the database machine's private DNS name or IP
+address, and match its database name, username, and password. The UI container
+must be able to reach that address. `localhost` would refer to the UI container,
+not the database machine. For a managed PostgreSQL service, use the provider's
+connection details and TLS settings (for example, `SSL Mode=VerifyFull` with
+its trusted CA configured).
 
-The UI listens at `http://localhost:8080` by default. Set `WEBBOARD_PORT` to
-change the host port. For remote access, put an HTTPS reverse proxy on the
-same host in front of this loopback endpoint; authentication uses Secure
-cookies and requires HTTPS. Configure TLS termination in your deployment.
+Generate a signing key with `openssl rand -hex 32` and paste it into
+`Authentication__Jwt__SigningKey`. Keep the key stable across upgrades and use
+the same key on all UI replicas. Keep your configured Compose file private.
 
-Compose supplies `ConnectionStrings__WebboardDatabase` using the `database`
-service name and port `5432`. The connection string in the root `.env` is for
-local .NET tooling and uses the published database port instead.
-`Authentication__Jwt__SigningKey` must contain a random key of at least 32
-bytes. Database schema updates are a separate migration step, described in
-the main README; the UI does not apply them at startup.
+## Initialize and start
 
-After starting the agent, add a host in the UI with agent URL
-`http://agent:8080` when using the full stack. `localhost` inside the UI
-container refers to the UI container itself.
+Start the database first. In the directory containing this Compose file:
+
+```sh
+docker compose pull ui
+docker compose run --rm --no-deps ui --migrate
+docker compose up -d ui
+docker compose logs -f ui
+```
+
+The migration command uses this image's embedded migrations and the configured
+connection string, then exits. It does not need a signing key and does not
+start the web server. Run it once per database, before starting the UI. A
+failed migration exits unsuccessfully; resolve it before starting the UI.
+The database user used for this command must have schema-change permissions.
+
+The UI listens on `127.0.0.1:8080` on this machine. Place an HTTPS reverse proxy
+on the same machine in front of it; login cookies are Secure and need HTTPS.
+If your proxy runs in a separate container or machine, connect it using a
+shared Docker network or bind the UI port to a private interface reachable
+by that proxy. Do not use the proxy container's `localhost` to reach the UI.
+
+Add each monitored machine in the UI with its reachable agent URL, for example
+`http://10.0.0.30:5080` over a private VPN. Docker service names such as `agent`
+only work on the same Docker network; they do not resolve across machines.
 
 ## Upgrade
 
-Back up PostgreSQL, set `WEBBOARD_VERSION` in `.env` to the desired published
-version, and check out the matching application source before applying any
-new migrations using the main README's migration command. Then:
+Back up the database and stop all UI replicas before a schema upgrade. Run
+these commands on the UI machine (migrations only once per database):
 
 ```sh
-docker compose --env-file .env -f deploy/docker-compose.yml pull ui
-docker compose --env-file .env -f deploy/docker-compose.yml up -d ui
+docker compose pull ui
+docker compose stop ui
+docker compose run --rm --no-deps ui --migrate
+docker compose up -d ui
 ```
 
-## Build locally
-
-```sh
-docker build -f deploy/ui/Dockerfile -t shujidev/webboard:local .
-WEBBOARD_VERSION=local docker compose --env-file .env -f deploy/docker-compose.yml up -d database ui
-```
-
-Local `.env` files and development settings are excluded from the image.
+`latest` follows new published builds; pulling it does not restart containers.
+For controlled upgrades, replace `latest` with a numbered tag such as `1.2`
+and use the same commands. Database changes may prevent rolling back an older
+image without restoring a compatible database backup.

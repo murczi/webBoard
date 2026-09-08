@@ -1,88 +1,45 @@
 # webBoard
 
-## Deployment guides
+Webboard has three independently deployable components. Install Docker with
+Compose on the machines running containers, then copy the relevant Compose
+example into a local `compose.yaml`. You do not need to clone this repository,
+install .NET, or create `.env`. Configure values directly in each Compose file.
 
-- [UI: Docker Compose, configuration, and upgrades](deploy/ui/README.md)
-- [Agent: Docker Compose and host socket access](deploy/agent/README.md)
-- [Complete Compose file: UI, agent, and PostgreSQL](deploy/docker-compose.yml)
+| Component | Image | Where it runs |
+| --- | --- | --- |
+| [UI](deploy/ui/README.md) | `shujidev/webboard:latest` | Web server machine; connects to the database and agents. |
+| [Agent](deploy/agent/README.md) | `shujidev/webboard-agent:latest` | Each Linux machine you want to monitor. |
+| [Database](deploy/database/README.md) | `postgres:18.4-alpine` or managed PostgreSQL | Database machine; reachable from the UI. |
 
-## Docker Compose
+## Separate machines
 
-Run these commands from the repository root on a Linux Docker host running
-systemd. The full stack monitors that host. See the agent guide for hosts
-without systemd or agents deployed on other machines.
+1. Follow the [database guide](deploy/database/README.md) to start PostgreSQL,
+   or use an existing database service.
+2. Follow the [UI guide](deploy/ui/README.md), pointing its connection string
+   at the database machine. Initialize the schema with the UI image's
+   `--migrate` command before starting the UI.
+3. Follow the [agent guide](deploy/agent/README.md) on each monitored machine.
+   Add each agent's private URL in the UI.
 
-### Configure
+Use private DNS names or VPN IP addresses between machines. Docker Compose
+service names only resolve within their own Docker network, and `localhost`
+inside a container refers to that container. The agent needs no database
+credentials or UI signing key. Users access the UI through HTTPS; the UI
+connects to PostgreSQL and agent HTTP APIs over the private network.
 
-If you do not already have a `.env`, copy `.env.example` to `.env`. Otherwise,
-merge the new variables into your existing file without replacing its database
-credentials. Set `WEBBOARD_VERSION` to a version published by CI, for example
-`1.0`. Set `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`, then add:
+Each guide contains a standalone Compose example and start/update commands.
+For just the UI and database, follow those two guides; no agent configuration
+is needed.
 
-```dotenv
-WEBBOARD_VERSION=1.0
-WEBBOARD_PORT=8080
-AGENT_PORT=5080
-Authentication__Jwt__SigningKey=replace-with-output-from-openssl
-DOCKER_GID=replace-with-your-docker-socket-group-id
-```
+## Docker Compose: one machine
 
-Generate the signing key and find the socket group ID:
-
-```sh
-openssl rand -hex 32
-stat -c '%g' /var/run/docker.sock
-```
-
-Paste the outputs into the corresponding `.env` entries. Keep `.env` private;
-it is ignored by Git and excluded from the images. Use a database password
-such as a randomly generated hex string so it can also be embedded safely in
-the PostgreSQL connection string.
-
-### Initialize the database and start
-
-A fresh PostgreSQL container creates the database, but the application's
-schema must be applied separately. Install the .NET 10 SDK and EF tool on the
-host for this step. Use source matching the selected image version (the
-publishing workflow run identifies its commit).
-
-```sh
-# Install once; if already installed, use dotnet tool update instead.
-dotnet tool install --global dotnet-ef --version 10.0.9
-
-docker compose --env-file .env -f deploy/docker-compose.yml up -d --wait database
-
-dotnet ef database update \
-  --project src/Webboard.Infrastructure.Configuration \
-  --startup-project src/Webboard.Infrastructure.Configuration
-
-docker compose --env-file .env -f deploy/docker-compose.yml pull ui agent
-docker compose --env-file .env -f deploy/docker-compose.yml up -d
-docker compose --env-file .env -f deploy/docker-compose.yml ps
-```
-
-The migration command reads `ConnectionStrings__WebboardDatabase` from the
-root `.env`. Use `Host=localhost` and the published `POSTGRES_PORT` for local
-tooling, as shown in `.env.example`. Inside Compose, the UI connects to
-`database:5432`. The UI waits for database health before starting, but this
-health check does not verify the application schema.
-
-The UI's HTTP endpoint is `http://localhost:8080`; expose it through an HTTPS
-reverse proxy for remote use and Secure authentication cookies. Agent health
-is available at `http://localhost:5080/health`. Add the agent in the UI using
-`http://agent:8080`. Registration creates an account without access grants;
-assign permissions using the user-access backend described below.
-
-The database uses the existing `dashboard-postgres-data` volume. Keep the
-same Compose project name when upgrading an existing installation to retain
-that volume. Existing database credentials must match the initialized volume;
-changing `.env` does not reset a PostgreSQL user's password.
-
-### Complete stack
-
-This is the contents of `deploy/docker-compose.yml`:
+For everything on one Linux Docker/systemd host, save this complete example
+as `compose.yaml` in any directory. It is also available as a
+[downloadable file](deploy/docker-compose.yml).
 
 ```yaml
+# Configure credentials, image versions, and ports directly in this file.
+# Replace the database password in BOTH places below; keep real credentials private.
 services:
   database:
     image: postgres:18.4-alpine
@@ -90,12 +47,12 @@ services:
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: dashboard
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: "REPLACE_WITH_DATABASE_PASSWORD"
 
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:5432:5432"
 
     volumes:
       - dashboard-postgres-data:/var/lib/postgresql
@@ -107,25 +64,25 @@ services:
       retries: 10
 
   ui:
-    image: shujidev/webboard:${WEBBOARD_VERSION:-1.0}
+    image: shujidev/webboard:latest
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}'
-      Authentication__Jwt__SigningKey: ${Authentication__Jwt__SigningKey:?Set a random signing key of at least 32 bytes in .env}
+      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      Authentication__Jwt__SigningKey: "" # Required: paste output of openssl rand -hex 32
     ports:
-      - "127.0.0.1:${WEBBOARD_PORT:-8080}:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       database:
         condition: service_healthy
 
   agent:
-    image: shujidev/webboard-agent:${WEBBOARD_VERSION:-1.0}
+    image: shujidev/webboard-agent:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${AGENT_PORT:-5080}:8080"
+      - "127.0.0.1:5080:8080"
     group_add:
-      - "${DOCKER_GID:?Set DOCKER_GID to the host Docker socket group ID}"
+      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -149,27 +106,58 @@ volumes:
   dashboard-postgres-data:
 ```
 
-The agent has access to the host Docker socket, which grants effective
-root-level host control. Its published port is bound to loopback; see the
-agent guide for private remote access and mount requirements.
+Replace the database password in both places, paste a key generated by
+`openssl rand -hex 32` into `Authentication__Jwt__SigningKey`, and replace the
+agent's `999` group ID with `stat -c '%g' /var/run/docker.sock` output. Keep the
+configured file private. For an existing database volume, retain its current
+credentials and Compose project name. See the agent guide for mount requirements.
 
-### Logs, updates, and shutdown
+From the directory containing `compose.yaml`:
 
 ```sh
-docker compose --env-file .env -f deploy/docker-compose.yml logs -f ui agent
-# After choosing a new WEBBOARD_VERSION in .env and applying its migrations:
-docker compose --env-file .env -f deploy/docker-compose.yml pull ui agent
-docker compose --env-file .env -f deploy/docker-compose.yml up -d
-# Stop containers while preserving database data:
-docker compose --env-file .env -f deploy/docker-compose.yml down
+docker compose pull
+docker compose up -d --wait database
+docker compose run --rm --no-deps ui --migrate
+docker compose up -d
 ```
 
-Back up the database before upgrades. `down` preserves its named volume;
-adding `--volumes` deletes it.
+For only the UI and database, use `docker compose up -d database ui` as the
+last command; no Docker socket group or agent mounts need configuring.
+The schema command exits after applying migrations; only start the UI if it
+succeeds. Run it once per database. No SDK or repository is required.
 
-Compose uses [environment-file interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
-and [database health dependencies](https://docs.docker.com/compose/how-tos/startup-order/).
-Schema initialization uses the [EF Core CLI](https://learn.microsoft.com/en-us/ef/core/cli/dotnet).
+The UI's local HTTP endpoint is `http://localhost:8080`; configure an HTTPS
+reverse proxy for browser access and Secure login cookies. In this shared
+network, add the local agent in the UI as `http://agent:8080`. Agent health is
+also available at `http://localhost:5080/health` on the host.
+
+## Updates
+
+The UI and agent default to `latest`. New images are downloaded when you run
+`docker compose pull`; containers are replaced by `docker compose up -d`.
+These are explicit updates, not automatic restarts whenever an image is published.
+Numbered tags (`1.0`, `1.1`, `1.2`, etc.) remain available for pinned deployments.
+PostgreSQL stays on a specific version so pulling cannot unexpectedly change
+its major version.
+
+For the single-machine stack, back up the database, then:
+
+```sh
+docker compose pull ui agent
+docker compose stop ui
+docker compose run --rm --no-deps ui --migrate
+docker compose up -d
+```
+
+Stop all UI replicas before schema upgrades and run migrations once. For
+separate machines, use the upgrade commands in each component's guide.
+If a migration fails, resolve it before restarting the UI. To stop the stack
+without deleting data, use `docker compose down`; adding `--volumes` deletes
+its database volume.
+
+See [Compose pull behavior](https://docs.docker.com/reference/cli/docker/compose/pull/)
+and [EF Core migration deployment](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying)
+for the underlying update mechanisms.
 
 ## Docker images and CI/CD
 
@@ -185,15 +173,21 @@ and so on (after `1.9` comes `1.10`). The minor number is the publishing
 workflow's run number minus one. Pull requests do not consume versions.
 Failed or cancelled publishing runs can leave gaps; re-running a failed run
 reuses its version. Keep the publishing workflow's identity to preserve its
-counter. Images are published for `linux/amd64` using explicit version tags.
+counter. Images are published for `linux/amd64` using numbered tags and `latest`.
 
-### One-time setup
+### Maintainer setup
 
 Create a Docker Hub access token for `shujidev` with **Read & Write** access
 to both image repositories. In this GitHub repository, open **Settings →
 Secrets and variables → Actions → New repository secret**, and save it as
 `DOCKERHUB_TOKEN`. Commit and push the workflow files to `main` to start the
 first build. The GitHub Actions run summary lists the published image tags.
+
+After both numbered images are pushed, CI updates both `latest` tags if the
+commit is still the head of `main`. Re-running an older commit does not move
+`latest` backwards. The two registry updates are separate operations; if one
+fails, re-run the failed publishing job. `latest` and the migration command
+become available after the first successful publication containing these changes.
 
 Both images must build before publishing starts. Docker Hub pushes are
 separate operations: if one fails, re-run the failed publishing job to finish
