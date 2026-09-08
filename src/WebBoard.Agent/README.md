@@ -27,11 +27,18 @@ OpenAPI JSON is available at `/openapi/v1.json` when the environment is
 
 ## Run in Docker
 
-Build from the repository root because the Dockerfile uses paths relative to
-the repository:
+CI publishes this image to `shujidev/webboard-agent` on every push to `main`,
+using the same version as `shujidev/webboard` (starting at `1.0`). See the
+[CI/CD setup](../../README.md#docker-images-and-cicd) for credentials and
+versioning details. To use a published version with the commands below,
+replace `webboard-agent` at the end of the `docker run` command with
+`shujidev/webboard-agent:1.0` (or the version you want).
+
+The Dockerfile and its ignore file live in `deploy/agent`. Build from the
+repository root because the Dockerfile uses paths relative to the repository:
 
 ```sh
-docker build -f src/WebBoard.Agent/Dockerfile -t webboard-agent .
+docker build -f deploy/agent/Dockerfile -t webboard-agent .
 docker run --rm --name webboard-agent \
   --publish 127.0.0.1:5080:8080 \
   --volume /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro \
