@@ -60,7 +60,7 @@ public sealed class JwtSessionService(
 
         foreach (var access in user.Access) {
             AddAccessClaim(claims, access.Resource, "create", access.CanCreate);
-            AddAccessClaim(claims, access.Resource, "read", access.CanRead);
+            AddAccessClaim(claims, access.Resource, "read", access.CanRead || access.CanCreate || access.CanUpdate || access.CanDelete);
             AddAccessClaim(claims, access.Resource, "update", access.CanUpdate);
             AddAccessClaim(claims, access.Resource, "delete", access.CanDelete);
         }

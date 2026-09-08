@@ -120,9 +120,12 @@ builder.Services
             }
         };
     });
-builder.Services.AddAuthorization(options =>
+builder.Services.AddAuthorization(options => {
     options.AddPolicy(HostAccess.Read, policy =>
-        policy.RequireClaim(JwtSessionService.AccessClaimType, HostAccess.Read)));
+        policy.RequireClaim(JwtSessionService.AccessClaimType, HostAccess.Read));
+    options.AddPolicy(UserAccess.Read, policy =>
+        policy.RequireClaim(JwtSessionService.AccessClaimType, UserAccess.Read));
+});
 
 builder.Services.AddRazorPages();
 

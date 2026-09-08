@@ -20,16 +20,20 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         CancellationToken cancellationToken = default) =>
         repository.GetUsersAsync(cancellationToken);
 
-    public Task<bool> DeleteUserAsync(
+    public async Task<bool> DeleteUserAsync(
         int userId,
         int actorId,
         string auditComment,
-        CancellationToken cancellationToken = default) =>
-        repository.DeleteUserAsync(
+        CancellationToken cancellationToken = default) {
+        await RequireUserPermissionAsync(actorId, delete: true, cancellationToken);
+        if (userId == actorId)
+            throw new UnauthorizedAccessException("You cannot delete your own account.");
+        return await repository.DeleteUserAsync(
             userId,
             actorId,
             AuditComment.Normalize(auditComment),
             cancellationToken);
+    }
 
     public async Task<IReadOnlyList<UserCrudAccessModel>> GetAccessAsync(
         int userId,
@@ -61,6 +65,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         int actorId,
         string auditComment,
         CancellationToken cancellationToken = default) {
+        await RequireUserPermissionAsync(actorId, delete: false, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
         if (!await repository.UserExistsAsync(userId, cancellationToken))
             throw new KeyNotFoundException($"User {userId} was not found.");
@@ -87,6 +92,8 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
                 item.CanDelete = false;
             }
 
+            item.CanRead |= item.CanCreate || item.CanUpdate || item.CanDelete;
+
             if (existing.TryGetValue(resource.Key, out var current)) {
                 item.Id = current.Id;
                 repository.Update(item);
@@ -98,5 +105,16 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
 
         repository.AddAuditLog(actorId, userId, auditComment);
         await repository.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task RequireUserPermissionAsync(
+        int actorId, bool delete, CancellationToken cancellationToken) {
+        if (await repository.UserExistsAsync(actorId, cancellationToken)) {
+            var access = await repository.GetByUserIdAsync(actorId, cancellationToken);
+            if (access.Any(item => item.Resource == "Users" &&
+                                   (delete ? item.CanDelete : item.CanUpdate)))
+                return;
+        }
+        throw new UnauthorizedAccessException("User management permission is required.");
     }
 }

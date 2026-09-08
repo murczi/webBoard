@@ -232,9 +232,26 @@ of at least 32 bytes before starting the app:
 export Authentication__Jwt__SigningKey='replace-with-a-long-random-production-key'
 ```
 
-Registration checks usernames case-insensitively and creates new accounts with
-no CRUD access grants. Access can then be assigned through the user-access
-backend.
+Registration checks usernames case-insensitively. The first account registered
+in an empty `Users` table receives all supported CRUD grants (read only for
+module types and audit logs). Concurrent registrations are serialized so only
+one account receives this initial administrator access. Later accounts receive
+no grants. Existing databases are not automatically promoted on upgrade.
+
+User management requires `Users:read`; changing anyone's permissions requires
+`Users:update`, and deleting another account requires `Users:delete`. Grant
+`Users:update` only to users trusted to manage all permissions, including their
+own. Permission changes and deletion also check the actor's current database
+grants. Users cannot delete their own account.
+
+Saving create, update, or delete access automatically enables read access for
+that resource. Use **Refresh access** or sign in again to load newly assigned
+permissions. No additional Compose setting or admin role column is required.
+
+PostgreSQL integration tests run with `WEBBOARD_TEST_DATABASE` set to a test
+server connection string with CREATE DATABASE rights, using
+`dotnet test Webboard.slnx`. Each test creates and drops a separate database;
+these tests are skipped when the variable is unset.
 
 The checked-in development configuration contains a local-only signing key and
 must not be used in production.

@@ -56,6 +56,10 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
         string name,
         string passwordHash,
         CancellationToken cancellationToken = default) {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize registration so concurrent first signups cannot both become administrators.
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "LOCK TABLE \"Users\" IN SHARE ROW EXCLUSIVE MODE", cancellationToken);
         if (await UserNameExistsAsync(name, cancellationToken))
             return false;
 
@@ -68,6 +72,20 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
             DateCreated = now,
             DateUpdated = now
         };
+        if (!await dbContext.Users.AnyAsync(cancellationToken)) {
+            foreach (var resource in new[] { "Users", "Hosts", "Modules", "ModuleTypes", "AuditLogs" }) {
+                var readOnly = resource is "ModuleTypes" or "AuditLogs";
+                entity.CrudAccess.Add(new UserCrudAccessEntity
+                {
+                    Resource = resource,
+                    CanRead = true,
+                    CanCreate = !readOnly,
+                    CanUpdate = !readOnly,
+                    CanDelete = !readOnly,
+                    User = entity
+                });
+            }
+        }
         dbContext.Users.Add(entity);
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
@@ -79,6 +97,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
 
         try {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return true;
         }
         catch (DbUpdateException exception)

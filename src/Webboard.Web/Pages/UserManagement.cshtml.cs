@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-[Authorize]
+[Authorize(Policy = UserAccess.Read)]
 public class UserManagementModel(
     IUserCrudAccessService userCrudAccessService,
     IAuditLogService auditLogs) : PageModel {
@@ -22,6 +22,9 @@ public class UserManagementModel(
             return int.TryParse(value, out var userId) ? userId : null;
         }
     }
+
+    public bool CanUpdateUsers => UserAccess.Has(User, UserAccess.Update);
+    public bool CanDeleteUsers => UserAccess.Has(User, UserAccess.Delete);
 
     public bool CanReadLogs => AuditLogAccess.HasRead(User);
 
@@ -50,6 +53,8 @@ public class UserManagementModel(
     public async Task<IActionResult> OnPostSaveAccessAsync(
         int userId,
         CancellationToken cancellationToken) {
+        if (!CanUpdateUsers)
+            return Forbid();
         if (CurrentUserId is not int actorId)
             return Challenge();
         if (!IsValidAuditComment()) {
@@ -67,6 +72,9 @@ public class UserManagementModel(
                 cancellationToken);
             TempData["StatusMessage"] = "CRUD access updated.";
         }
+        catch (UnauthorizedAccessException) {
+            return Forbid();
+        }
         catch (KeyNotFoundException) {
             TempData["ErrorMessage"] = "The selected user no longer exists.";
         }
@@ -80,6 +88,8 @@ public class UserManagementModel(
     public async Task<IActionResult> OnPostDeleteAsync(
         int userId,
         CancellationToken cancellationToken) {
+        if (!CanDeleteUsers)
+            return Forbid();
         if (CurrentUserId == userId) {
             TempData["ErrorMessage"] = "You cannot delete your own account.";
             return RedirectToPage();
@@ -87,14 +97,19 @@ public class UserManagementModel(
         if (CurrentUserId is not int actorId)
             return Challenge();
 
-        var deleted = await userCrudAccessService.DeleteUserAsync(
-            userId,
-            actorId,
-            "Deleted user.",
-            cancellationToken);
-        TempData[deleted ? "StatusMessage" : "ErrorMessage"] = deleted
-            ? "User deleted."
-            : "The selected user no longer exists.";
+        try {
+            var deleted = await userCrudAccessService.DeleteUserAsync(
+                userId,
+                actorId,
+                "Deleted user.",
+                cancellationToken);
+            TempData[deleted ? "StatusMessage" : "ErrorMessage"] = deleted
+                ? "User deleted."
+                : "The selected user no longer exists.";
+        }
+        catch (UnauthorizedAccessException) {
+            return Forbid();
+        }
 
         return RedirectToPage();
     }
