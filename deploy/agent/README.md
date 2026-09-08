@@ -34,6 +34,59 @@ versioning details. To use a published version with the commands below,
 replace `webboard-agent` at the end of the `docker run` command with
 `shujidev/webboard-agent:1.0` (or the version you want).
 
+## Docker Compose
+
+For the UI, database, and agent together, follow the
+[full-stack setup](../../README.md#docker-compose). From the repository root:
+
+```sh
+docker compose --env-file .env -f deploy/docker-compose.yml up -d agent
+docker compose --env-file .env -f deploy/docker-compose.yml logs -f agent
+curl http://localhost:5080/health
+```
+
+The shared file requires all variables from the main setup even when only
+starting the agent. For an agent on a separate machine, save this standalone
+configuration as `compose.yaml`:
+
+```yaml
+services:
+  agent:
+    image: shujidev/webboard-agent:${WEBBOARD_VERSION:-1.0}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGENT_PORT:-5080}:8080"
+    group_add:
+      - "${DOCKER_GID:?Set the Docker socket group ID}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+      - /run/systemd/system:/run/systemd/system:ro
+```
+
+On a Linux Docker host running systemd:
+
+```sh
+export WEBBOARD_VERSION=1.0
+export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+docker compose up -d
+curl http://localhost:5080/health
+```
+
+Set the version to one published by CI. For upgrades, change the version,
+then run `docker compose pull` and `docker compose up -d`.
+The default binding only permits access from the agent host. To connect a UI
+on another machine, use a private authenticated tunnel or proxy and configure
+that address in the UI; the agent currently has no built-in authentication.
+For the full stack's shared network, use `http://agent:8080` in the UI.
+
+These mounts require a Linux host with Docker and systemd. On hosts without
+systemd, remove the two `/run/…` mounts; systemd endpoints will be unavailable.
+The Docker socket group ID is specific to each host. See the access notes
+below before mounting it.
+
+## Build and run manually
+
 The Dockerfile and its ignore file live in `deploy/agent`. Build from the
 repository root because the Dockerfile uses paths relative to the repository:
 

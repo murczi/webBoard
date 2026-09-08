@@ -5,21 +5,60 @@ services:
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
 
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
 
     volumes:
       - dashboard-postgres-data:/var/lib/postgresql
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  ui:
+    image: shujidev/webboard:${WEBBOARD_VERSION:-1.0}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}'
+      Authentication__Jwt__SigningKey: ${Authentication__Jwt__SigningKey:?Set a random signing key of at least 32 bytes in .env}
+    ports:
+      - "127.0.0.1:${WEBBOARD_PORT:-8080}:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  agent:
+    image: shujidev/webboard-agent:${WEBBOARD_VERSION:-1.0}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGENT_PORT:-5080}:8080"
+    group_add:
+      - "${DOCKER_GID:?Set DOCKER_GID to the host Docker socket group ID}"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /run/dbus/system_bus_socket
+        target: /run/dbus/system_bus_socket
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /run/systemd/system
+        target: /run/systemd/system
+        read_only: true
+        bind:
+          create_host_path: false
 
 volumes:
   dashboard-postgres-data:
