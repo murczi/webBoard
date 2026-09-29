@@ -5,6 +5,22 @@ using Domain.Model.Modules;
 using Domain.Services;
 
 public class ModuleManagementServiceTests {
+    [Theory]
+    [InlineData(null)] [InlineData(0)] [InlineData(65536)]
+    public async Task SteamRequiresValidQueryPort(int? port) {
+        var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 5, ValidTypeName = "Steam" });
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(new ModuleModel { Name = "Steam", TypeId = 5, SteamServerAddress = "game.example.test", SteamQueryPort = port }, 1, "Created"));
+    }
+    [Fact]
+    public async Task SteamClearsOtherTypeConfigurationAndDoesNotRequireAHost() {
+        var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 5, ValidTypeName = "Steam" });
+        var module = await service.AddAsync(new ModuleModel { Name = "Steam", TypeId = 5, HostId = 999,
+            SteamServerAddress = "game.example.test", SteamQueryPort = 27015, SteamQueryPlayers = true,
+            ContainerId = "old", MinecraftServerAddress = "old", MinecraftServerPort = 25565 }, 1, "Created");
+        Assert.Null(module.HostId); Assert.Null(module.ContainerId); Assert.Null(module.MinecraftServerAddress);
+        Assert.Equal(27015, module.SteamQueryPort); Assert.True(module.SteamQueryPlayers);
+    }
+
     [Fact]
     public async Task AddAsync_AllowsHttpModuleWithoutHost() {
         var repository = new FakeModuleRepository();

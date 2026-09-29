@@ -157,6 +157,11 @@
                                     Services are loaded live from the selected host's agent.
                                 </div>
                             </div>
+                            <div class="col-12 d-none" id="module-steam-field">
+                                <label asp-for="Module.SteamServerAddress" class="form-label"></label><input asp-for="Module.SteamServerAddress" class="form-control" disabled />
+                                <label asp-for="Module.SteamQueryPort" class="form-label"></label><input asp-for="Module.SteamQueryPort" class="form-control" type="number" min="1" max="65535" disabled />
+                                <label><input asp-for="Module.SteamQueryPlayers" disabled /> Query optional player details</label>
+                            </div>
                             <div class="col-12 d-none" id="module-minecraft-field">
                                 <div class="row g-3">
                                     <div class="col-md-8">
@@ -372,11 +377,18 @@
                 const docker = isDockerType();
                 const systemd = isSystemdType();
                 const minecraft = isMinecraftType();
-                hostField.classList.toggle('d-none', minecraft);
+                const steam = type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'steam';
+                document.getElementById('module-steam-field').classList.toggle('d-none', !steam);
+                ['SteamServerAddress', 'SteamQueryPort', 'SteamQueryPlayers'].forEach(name => {
+                    const input = document.getElementById('Module_' + name);
+                    input.disabled = !steam;
+                    if (name !== 'SteamQueryPlayers') input.required = steam;
+                });
+                hostField.classList.toggle('d-none', minecraft || steam);
                 typeField.classList.toggle('col-md-6', !minecraft);
                 typeField.classList.toggle('col-12', minecraft);
-                healthUrlField.classList.toggle('d-none', docker || systemd || minecraft);
-                healthUrl.disabled = docker || systemd || minecraft;
+                healthUrlField.classList.toggle('d-none', docker || systemd || minecraft || steam);
+                healthUrl.disabled = docker || systemd || minecraft || steam;
                 containerField.classList.toggle('d-none', !docker);
                 container.required = docker;
                 serviceField.classList.toggle('d-none', !systemd);
@@ -447,6 +459,9 @@
                     name.value = button.dataset.moduleName;
                     description.value = button.dataset.moduleDescription ?? '';
                     host.value = button.dataset.moduleHostId ?? '';
+                    document.getElementById('Module_SteamServerAddress').value = button.dataset.moduleSteamAddress ?? '';
+                    document.getElementById('Module_SteamQueryPort').value = button.dataset.moduleSteamPort ?? '27015';
+                    document.getElementById('Module_SteamQueryPlayers').checked = button.dataset.moduleSteamPlayers === 'true';
                     type.value = button.dataset.moduleTypeId;
                     healthUrl.value = button.dataset.moduleHealthUrl ?? '';
                     managementUrl.value = button.dataset.moduleManagementUrl ?? '';

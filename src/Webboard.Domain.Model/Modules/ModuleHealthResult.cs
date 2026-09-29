@@ -9,4 +9,6 @@ public enum ModuleHealthState {
 public sealed record ModuleHealthResult(
     ModuleHealthState State,
     long? PingMilliseconds,
-    string Message);
+    string Message) {
+    public SteamServerInfo? Steam { get; init; }
+}

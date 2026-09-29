@@ -62,8 +62,15 @@ builder.Services.AddHttpClient<ISystemdAgentClient, Webboard.Web.Services.System
     .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
     .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
 builder.Services.AddSingleton<IMinecraftStatusClient, Webboard.Web.Services.MinecraftStatusClient>();
-builder.Services.AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client => client.Timeout = TimeSpan.FromSeconds(5))
+builder.Services.AddHttpClient<Webboard.Web.Services.HttpHealthHandler>(client => client.Timeout = TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
+builder.Services.AddScoped<IModuleHealthHandler>(provider => provider.GetRequiredService<Webboard.Web.Services.HttpHealthHandler>());
+builder.Services.AddScoped<IModuleHealthHandler, Webboard.Web.Services.DockerHealthHandler>();
+builder.Services.AddScoped<IModuleHealthHandler, Webboard.Web.Services.SystemdHealthHandler>();
+builder.Services.AddScoped<IModuleHealthHandler, Webboard.Web.Services.MinecraftHealthHandler>();
+builder.Services.AddScoped<IModuleHealthHandler, Webboard.Web.Services.SteamHealthHandler>();
+builder.Services.AddScoped<ISteamQueryClient, Webboard.Web.Services.SteamQueryClient>();
+builder.Services.AddScoped<IModuleHealthChecker>(provider => new Webboard.Web.Services.ModuleHealthChecker(provider.GetServices<IModuleHealthHandler>()));
 
 var jwtOptions = builder.Configuration
     .GetSection(JwtOptions.SectionName)

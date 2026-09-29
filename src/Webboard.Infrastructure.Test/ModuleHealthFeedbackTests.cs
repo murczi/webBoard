@@ -120,7 +120,7 @@ public sealed class ModuleHealthFeedbackTests {
         ServiceName = "test.service", HealthCheckUrl = "http://service.test/health"
     };
 
-    private static HttpModuleHealthChecker Checker(HttpClient client) =>
+    private static ModuleHealthChecker Checker(HttpClient client) =>
         new(client, new DockerAgentClient(client), new SystemdAgentClient(client), new UnusedMinecraftClient());
 
     private static HttpClient Client(Func<HttpRequestMessage, HttpResponseMessage> send) => new(new Handler(send));

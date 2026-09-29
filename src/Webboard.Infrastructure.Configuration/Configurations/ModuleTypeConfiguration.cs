@@ -17,6 +17,7 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
                .HasMaxLength(maxLength: 64);
 
         builder.HasData(
+            new ModuleTypeEntity { Id = 5, Name = "Steam", Description = "Steam A2S game server" },
             new ModuleTypeEntity
             {
                 Id = 1,

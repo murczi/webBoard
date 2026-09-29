@@ -71,6 +71,7 @@ else {
                         <span class="small text-muted mb-2">Response time: @tile.Health.PingMilliseconds ms</span>
                     }
 
+                    <details data-steam-details hidden="@(tile.Health.Steam is null)"><summary>Game server details</summary><pre class="small text-wrap" data-steam-info>@(tile.Health.Steam is { } steam ? $"{steam.Game} · {steam.Version}\n{steam.Name} · {steam.Map}\n{steam.Players}/{steam.MaxPlayers} players" : "")</pre></details>
                     <p class="text-muted module-description @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "fst-italic" : "")">
                         @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "No description" : tile.Module.Description)
                     </p>

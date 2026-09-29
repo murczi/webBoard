@@ -48,6 +48,8 @@ public class ModuleConfiguration : IEntityTypeConfiguration<ModuleEntity> {
         builder.Property(propertyExpression: module => module.IsEnabled)
                .HasDefaultValue(value: true);
 
+        builder.Property(x => x.SteamServerAddress).HasMaxLength(253);
+        builder.ToTable("Modules", table => table.HasCheckConstraint("CK_Modules_SteamPort", "\"SteamQueryPort\" IS NULL OR \"SteamQueryPort\" BETWEEN 1 AND 65535"));
         builder.HasIndex(indexExpression: module => module.HostId);
     }
 }

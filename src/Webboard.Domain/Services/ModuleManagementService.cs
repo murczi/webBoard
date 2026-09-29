@@ -65,11 +65,24 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         if (typeName is null)
             throw new ArgumentException("Select a valid module type.", nameof(module));
         if (module.HostId.HasValue &&
+            !string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(typeName, "Minecraft", StringComparison.OrdinalIgnoreCase) &&
             !await repository.HostExistsAsync(module.HostId.Value, cancellationToken))
             throw new ArgumentException("Select a valid host or leave the host empty.", nameof(module));
 
-        if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
+        if (!string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase)) {
+            module.SteamServerAddress = null; module.SteamQueryPort = null; module.SteamQueryPlayers = false;
+        }
+        if (string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase)) {
+            module.HostId = null; module.HealthCheckUrl = null; module.ContainerId = null;
+            module.ServiceName = null; module.MinecraftServerAddress = null; module.MinecraftServerPort = null;
+            module.SteamServerAddress = EmptyToNull(module.SteamServerAddress);
+            if (module.SteamServerAddress is null || !IsValidMinecraftAddress(module.SteamServerAddress) ||
+                Uri.CheckHostName(module.SteamServerAddress) == UriHostNameType.Unknown)
+                throw new ArgumentException("Enter a valid Steam server address.");
+            if (module.SteamQueryPort is null or < 1 or > 65535) throw new ArgumentException("Enter a query port between 1 and 65535.");
+        }
+        else if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
             module.HealthCheckUrl = null;
             module.ServiceName = null;
             module.MinecraftServerAddress = null;

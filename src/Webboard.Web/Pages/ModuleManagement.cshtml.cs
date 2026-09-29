@@ -254,6 +254,13 @@ public class ModuleManagementModel(
         [Display(Name = "Minecraft server port")]
         public int? MinecraftServerPort { get; set; }
 
+        [StringLength(253), Display(Name = "Steam server address")]
+        public string? SteamServerAddress { get; set; }
+        [Range(1, 65535), Display(Name = "Query port")]
+        public int? SteamQueryPort { get; set; }
+        [Display(Name = "Query player details (optional)")]
+        public bool SteamQueryPlayers { get; set; }
+
         [StringLength(2048), Url]
         [Display(Name = "Management URL")]
         public string? ManagementUrl { get; set; }
@@ -273,6 +280,7 @@ public class ModuleManagementModel(
             ServiceName = ServiceName,
             MinecraftServerAddress = MinecraftServerAddress,
             MinecraftServerPort = MinecraftServerPort,
+            SteamServerAddress = SteamServerAddress, SteamQueryPort = SteamQueryPort, SteamQueryPlayers = SteamQueryPlayers,
             ManagementUrl = ManagementUrl,
             IsEnabled = IsEnabled
         };

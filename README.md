@@ -324,3 +324,13 @@ Authenticated agents expose allowlisted Docker and systemd controls. See the
 `AddModuleOperationsAndPermissions` prepares operation audit records and permission
 storage. Apply migrations with all UI replicas stopped. The UI operation interface
 and consolidated permission follow in a separate change.
+
+## Steam server monitoring
+
+Steam modules query the explicit UDP query port (often 27015; game port can differ).
+They display server name, game, map, population, latency, and availability. Optional
+player details may be unavailable on otherwise healthy servers. The implementation
+supports Source A2S_INFO with challenges and split/BZip2 responses. Legacy GoldSrc
+info packets and unusual pre-Orange-Box split layouts are reported as incompatible;
+other modules continue monitoring normally. BZip2 decoding uses
+[SharpZipLib](https://github.com/icsharpcode/SharpZipLib).

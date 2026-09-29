@@ -26,6 +26,9 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                 ServiceName = module.ServiceName,
                 MinecraftServerAddress = module.MinecraftServerAddress,
                 MinecraftServerPort = module.MinecraftServerPort,
+                SteamServerAddress = module.SteamServerAddress,
+                SteamQueryPort = module.SteamQueryPort,
+                SteamQueryPlayers = module.SteamQueryPlayers,
                 ManagementUrl = module.ManagementUrl,
                 IsEnabled = module.IsEnabled,
                 DateCreated = module.DateCreated,
@@ -71,6 +74,9 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             ServiceName = module.ServiceName,
             MinecraftServerAddress = module.MinecraftServerAddress,
             MinecraftServerPort = module.MinecraftServerPort,
+            SteamServerAddress = module.SteamServerAddress,
+            SteamQueryPort = module.SteamQueryPort,
+            SteamQueryPlayers = module.SteamQueryPlayers,
             ManagementUrl = module.ManagementUrl,
             DeletionFlag = false,
             IsEnabled = module.IsEnabled,
@@ -110,6 +116,9 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(entity => entity.ServiceName, module.ServiceName)
                     .SetProperty(entity => entity.MinecraftServerAddress, module.MinecraftServerAddress)
                     .SetProperty(entity => entity.MinecraftServerPort, module.MinecraftServerPort)
+                    .SetProperty(entity => entity.SteamServerAddress, module.SteamServerAddress)
+                    .SetProperty(entity => entity.SteamQueryPort, module.SteamQueryPort)
+                    .SetProperty(entity => entity.SteamQueryPlayers, module.SteamQueryPlayers)
                     .SetProperty(entity => entity.ManagementUrl, module.ManagementUrl)
                     .SetProperty(entity => entity.IsEnabled, module.IsEnabled)
                     .SetProperty(entity => entity.DateUpdated, module.DateUpdated),

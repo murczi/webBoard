@@ -14,6 +14,9 @@ public class ModuleModel {
     public string? ServiceName { get; set; }
     public string? MinecraftServerAddress { get; set; }
     public int? MinecraftServerPort { get; set; }
+    public string? SteamServerAddress { get; set; }
+    public int? SteamQueryPort { get; set; }
+    public bool SteamQueryPlayers { get; set; }
     public string? ManagementUrl { get; set; }
     public bool IsEnabled { get; set; }
     public DateTimeOffset DateCreated { get; set; }
