@@ -264,6 +264,9 @@ with write permissions can switch to the corresponding management page with
 modules; the viewing dashboard shows enabled modules only. Host Enabled/Disabled
 labels describe configuration, not live reachability.
 
+The theme selector supports **System**, **Light**, and **Dark**, saved in this
+browser. System follows the device preference.
+
 **Audit log** requires `AuditLogs:read` and shows all recorded events, including
 history for deleted items. Filter by resource, action, actor, or UTC date range.
 Item history links preselect a target; remove that filter to broaden the view.

@@ -14,6 +14,7 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>@ViewData["Title"] · Webboard</title>
+    <script src="~/js/theme.js" asp-append-version="true"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css"/>
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true"/>
     <link rel="stylesheet" href="~/css/workspace.css" asp-append-version="true"/>
@@ -42,6 +43,7 @@
     <header class="app-topbar">
         @if (authenticated) { <button class="btn btn-outline-secondary d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#navigation" aria-controls="navigation" aria-label="Open navigation">Menu</button> }
         <span class="text-muted small">@ViewData["Title"]</span>
+        <div class="d-flex align-items-center gap-2 ms-auto"><label for="theme-choice" class="small text-muted">Theme</label><select id="theme-choice" class="form-select form-select-sm w-auto" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
     </header>
     <main id="main-content" class="workspace-main" tabindex="-1">@RenderBody()</main>
     <footer class="app-footer">Webboard · Your infrastructure, in view</footer>
