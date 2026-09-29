@@ -1,85 +1,54 @@
-﻿<!DOCTYPE html>
+@{
+    var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+    var authenticated = User.Identity?.IsAuthenticated == true;
+    var links = new List<(string Page, string Label, bool Visible, bool Active)> {
+        ("/Index", "Modules", ModuleAccess.Has(User, ModuleAccess.Read), page is "/Index" or "/ModuleManagement"),
+        ("/Hosts", "Hosts", HostAccess.Has(User, HostAccess.Read), page is "/Hosts" or "/HostManagement"),
+        ("/Users", "Users", UserAccess.Has(User, UserAccess.Read), page is "/Users" or "/UserManagement"),
+        ("/AuditLogs", "Audit log", AuditLogAccess.HasRead(User), page == "/AuditLogs")
+    };
+}
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>@ViewData["Title"] - Webboard.Web</title>
-    <script type="importmap"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>@ViewData["Title"] · Webboard</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css"/>
-    <link rel="stylesheet" href="~/css/workspace.css" asp-append-version="true"/>
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true"/>
-    <link rel="stylesheet" href="~/Webboard.Web.styles.css" asp-append-version="true"/>
+    <link rel="stylesheet" href="~/css/workspace.css" asp-append-version="true"/>
 </head>
 <body>
-<header>
-    <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
-        <div class="container">
-            <a class="navbar-brand" asp-area="" asp-page="/Index">Webboard</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse"
-                    aria-controls="navbarSupportedContent"
-                    aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                <ul class="navbar-nav flex-grow-1">
-                    <li class="nav-item">
-                        <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
-                    </li>
-                    @if (User.Identity?.IsAuthenticated == true) {
-                        @if (HostAccess.Has(User, HostAccess.Read)) {
-                            <li class="nav-item">
-                                <a class="nav-link text-dark" asp-area="" asp-page="/HostManagement">Hosts</a>
-                            </li>
-                        }
-                        @if (UserAccess.Has(User, UserAccess.Read)) {
-                            <li class="nav-item">
-                                <a class="nav-link text-dark" asp-area="" asp-page="/UserManagement">Users</a>
-                            </li>
-                        }
-                    }
-                    @if (AuditLogAccess.HasRead(User)) { <li class="nav-item"><a class="nav-link text-dark" asp-page="/AuditLogs">Audit log</a></li> }
-                </ul>
-                @if (User.Identity?.IsAuthenticated == true) {
-                    <div class="dropdown">
-                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
-                                data-bs-toggle="dropdown" aria-expanded="false">
-                            @User.Identity.Name
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                            <li>
-                                <form asp-page="/Index" asp-page-handler="RefreshAccess" method="post">
-                                    <button type="submit" class="dropdown-item">Refresh access</button>
-                                </form>
-                            </li>
-                            <li><hr class="dropdown-divider"/></li>
-                            <li>
-                                <form asp-page="/Login" asp-page-handler="Logout" method="post">
-                                    <button type="submit" class="dropdown-item text-danger">Sign out</button>
-                                </form>
-                            </li>
-                        </ul>
-                    </div>
-                }
+<a class="skip-link" href="#main-content">Skip to content</a>
+@if (authenticated) {
+    <aside class="offcanvas-lg offcanvas-start app-sidebar" tabindex="-1" id="navigation" aria-labelledby="navigation-title">
+        <div class="offcanvas-header"><span id="navigation-title" class="fw-bold">Navigation</span><button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#navigation" aria-label="Close navigation"></button></div>
+        <div class="offcanvas-body">
+            <a class="brand" asp-page="/Index"><span class="brand-mark" aria-hidden="true">W</span> Webboard</a>
+            <p class="sidebar-label">Workspace</p>
+            <nav aria-label="Main navigation">
+            @foreach (var link in links.Where(l => l.Visible)) {
+                <a class="sidebar-link @(link.Active ? "active" : "")" asp-page="@link.Page" aria-current="@(link.Active ? "page" : null)">@link.Label</a>
+            }
+            </nav>
+            <div class="sidebar-bottom"><span class="sidebar-label">Signed in as</span><strong class="d-block text-break">@User.Identity?.Name</strong>
+                <form asp-page="/Index" asp-page-handler="RefreshAccess" method="post"><button class="btn btn-sm btn-outline-secondary w-100 mt-3">Refresh access</button></form>
+                <form asp-page="/Login" asp-page-handler="Logout" method="post"><button class="btn btn-sm btn-outline-secondary w-100 mt-2">Sign out</button></form>
             </div>
         </div>
-    </nav>
-</header>
-<div class="@(ViewData["FullWidth"] as bool? == true ? "container-fluid px-3 px-lg-4" : "container")">
-    <main role="main" class="pb-3">
-        @RenderBody()
-    </main>
+    </aside>
+}
+<div class="@(authenticated ? "app-content" : "public-content")">
+    <header class="app-topbar">
+        @if (authenticated) { <button class="btn btn-outline-secondary d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#navigation" aria-controls="navigation" aria-label="Open navigation">Menu</button> }
+        <span class="text-muted small">@ViewData["Title"]</span>
+    </header>
+    <main id="main-content" class="workspace-main" tabindex="-1">@RenderBody()</main>
+    <footer class="app-footer">Webboard · Your infrastructure, in view</footer>
 </div>
-
-<footer class="border-top footer text-muted">
-    <div class="container">
-        &copy; 2026 - Webboard
-    </div>
-</footer>
-
 <script src="~/lib/jquery/dist/jquery.min.js"></script>
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 <script src="~/js/site.js" asp-append-version="true"></script>
-
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

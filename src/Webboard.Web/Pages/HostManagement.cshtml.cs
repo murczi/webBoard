@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 public class HostManagementModel(IHostManagementService hosts, IAuditLogService auditLogs) : PageModel {
     public IReadOnlyList<HostModel> Hosts { get; private set; } = Array.Empty<HostModel>();
 
+    public string? ReopenHandler { get; private set; }
+
     public bool CanCreate => HostAccess.Has(User, HostAccess.Create);
     public bool CanUpdate => HostAccess.Has(User, HostAccess.Update);
     public bool CanDelete => HostAccess.Has(User, HostAccess.Delete);
@@ -27,8 +29,11 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
     [BindProperty]
     public string AuditComment { get; set; } = string.Empty;
 
-    public async Task OnGetAsync(CancellationToken cancellationToken) =>
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken) {
+        if (!CanCreate && !CanUpdate && !CanDelete) return RedirectToPage("/Hosts");
         Hosts = await hosts.GetAllAsync(cancellationToken);
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostTestAgentAsync(
         string agentBaseUrl,
@@ -50,7 +55,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
         ModelState.Remove(nameof(AuditComment));
         if (!ModelState.IsValid) {
             SetValidationError();
-            return RedirectToPage();
+            return await RedisplayAsync("Add", cancellationToken);
         }
 
         try {
@@ -64,6 +69,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
             TempData["ErrorMessage"] = $"Host was not added: {exception.Message}";
         }
 
+        if (TempData.ContainsKey("ErrorMessage")) return await RedisplayAsync("Add", cancellationToken);
         return RedirectToPage();
     }
 
@@ -74,7 +80,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
             return Challenge();
         if (!IsValidAuditComment() || !ModelState.IsValid) {
             SetValidationError();
-            return RedirectToPage();
+            return await RedisplayAsync("Update", cancellationToken);
         }
 
         try {
@@ -91,6 +97,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
             TempData["ErrorMessage"] = $"Host was not updated: {exception.Message}";
         }
 
+        if (TempData.ContainsKey("ErrorMessage")) return await RedisplayAsync("Update", cancellationToken);
         return RedirectToPage();
     }
 
@@ -118,6 +125,12 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
             return Forbid();
 
         return new JsonResult(await auditLogs.GetHostLogsAsync(hostId, page, cancellationToken));
+    }
+
+    private async Task<IActionResult> RedisplayAsync(string handler, CancellationToken cancellationToken) {
+        ReopenHandler = handler;
+        await OnGetAsync(cancellationToken);
+        return Page();
     }
 
     private bool IsValidAuditComment() {

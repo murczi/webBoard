@@ -1,0 +1,25 @@
+@page
+@model UsersModel
+@{ ViewData["Title"] = "Users"; }
+<div class="page-heading"><div><p class="eyebrow">People & access</p><h1>Users</h1><p class="text-muted">See who has access to Webboard.</p></div>
+@if (Model.CanManage) { <a class="btn btn-primary" asp-page="/UserManagement">Manage users</a> }</div>
+<div class="resource-summary"><strong>@Model.Users.Count</strong> registered users</div>
+@if (Model.Users.Count == 0) { <div class="empty-state"><h2>No users found</h2><p>Registered users will appear here.</p></div> }
+else {
+<div class="card table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Username</th><th class="text-end">Details</th></tr></thead><tbody>
+@foreach (var user in Model.Users) {
+<tr><td><strong>@user.Name</strong> @if (user.Id == Model.CurrentUserId) { <span class="badge text-bg-secondary ms-2">You</span> }</td>
+<td class="text-end"><a asp-page="/Users" asp-route-userId="@user.Id" asp-fragment="permissions">View permissions</a>
+@if (Model.CanReadLogs) { <a class="ms-3" asp-page="/AuditLogs" asp-route-Resource="Users" asp-route-TargetId="@user.Id">History</a> }</td></tr>
+}
+</tbody></table></div>
+}
+@if (Model.SelectedName is not null) {
+<section id="permissions" class="card mt-4"><div class="card-body">
+<div class="d-flex justify-content-between"><h2 class="h5">Permissions for @Model.SelectedName</h2><a asp-page="/Users">Close</a></div>
+<div class="table-responsive"><table class="table mb-0"><thead><tr><th>Resource</th><th>Create</th><th>Read</th><th>Update</th><th>Delete</th></tr></thead><tbody>
+@foreach (var access in Model.Permissions) {
+<tr><th>@access.Resource</th><td>@(access.CanCreate ? "Yes" : "—")</td><td>@(access.CanRead ? "Yes" : "—")</td><td>@(access.CanUpdate ? "Yes" : "—")</td><td>@(access.CanDelete ? "Yes" : "—")</td></tr>
+}
+</tbody></table></div></div></section>
+}

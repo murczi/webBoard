@@ -23,6 +23,9 @@ public class UserManagementModel(
         }
     }
 
+    public int? RetryUserId { get; private set; }
+    public string? RetryUserName { get; private set; }
+
     public bool CanUpdateUsers => UserAccess.Has(User, UserAccess.Update);
     public bool CanDeleteUsers => UserAccess.Has(User, UserAccess.Delete);
 
@@ -34,8 +37,10 @@ public class UserManagementModel(
     [BindProperty]
     public string AuditComment { get; set; } = string.Empty;
 
-    public async Task OnGetAsync(CancellationToken cancellationToken) {
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken) {
+        if (!CanUpdateUsers && !CanDeleteUsers) return RedirectToPage("/Users");
         Users = await userCrudAccessService.GetUsersAsync(cancellationToken);
+        return Page();
     }
 
     public async Task<IActionResult> OnGetAccessAsync(
@@ -57,10 +62,10 @@ public class UserManagementModel(
             return Forbid();
         if (CurrentUserId is not int actorId)
             return Challenge();
-        if (!IsValidAuditComment()) {
+        if (!ModelState.IsValid || !IsValidAuditComment()) {
             TempData["ErrorMessage"] =
                 $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.";
-            return RedirectToPage();
+            return await RedisplayAccessAsync(userId, cancellationToken);
         }
 
         try {
@@ -82,6 +87,7 @@ public class UserManagementModel(
             TempData["ErrorMessage"] = "The submitted access settings were invalid.";
         }
 
+        if (TempData.ContainsKey("ErrorMessage")) return await RedisplayAccessAsync(userId, cancellationToken);
         return RedirectToPage();
     }
 
@@ -122,6 +128,15 @@ public class UserManagementModel(
             return Forbid();
 
         return new JsonResult(await auditLogs.GetUserLogsAsync(userId, page, cancellationToken));
+    }
+
+    private async Task<IActionResult> RedisplayAccessAsync(int userId, CancellationToken cancellationToken) {
+        Users = await userCrudAccessService.GetUsersAsync(cancellationToken);
+        RetryUserName = Users.FirstOrDefault(user => user.Id == userId)?.Name;
+        RetryUserId = RetryUserName is null ? null : userId;
+        foreach (var item in Access)
+            item.IsReadOnlyResource = item.Resource is "AuditLogs" or "ModuleTypes";
+        return Page();
     }
 
     private bool IsValidAuditComment() =>

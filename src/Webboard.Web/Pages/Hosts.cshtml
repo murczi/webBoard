@@ -1,0 +1,24 @@
+@page
+@model HostsModel
+@{ ViewData["Title"] = "Hosts"; }
+<div class="page-heading">
+    <div><p class="eyebrow">Infrastructure</p><h1>Hosts</h1><p class="text-muted">The machines behind your services. Enabled indicates configuration, not live health.</p></div>
+    @if (Model.CanManage) { <a class="btn btn-primary" asp-page="/HostManagement">Manage hosts</a> }
+</div>
+<div class="resource-summary"><strong>@Model.Hosts.Count</strong> hosts <span>· @Model.Hosts.Count(h => h.IsEnabled) enabled</span></div>
+@if (Model.Hosts.Count == 0) {
+    <div class="empty-state"><h2>No hosts yet</h2><p>Configured machines will appear here.</p>
+        @if (Model.CanManage) { <a asp-page="/HostManagement">Manage hosts to add your first machine →</a> }
+    </div>
+} else {
+    <div class="module-grid">
+    @foreach (var host in Model.Hosts) {
+        <article class="card resource-card"><div class="card-body">
+            <div class="d-flex justify-content-between gap-2"><h2 class="h5 text-break">@host.Name</h2><span class="badge @(host.IsEnabled ? "text-bg-success" : "text-bg-secondary") align-self-start">@(host.IsEnabled ? "Enabled" : "Disabled")</span></div>
+            <p class="text-muted text-break mt-3">@host.AgentBaseUrl</p>
+            <div class="d-flex justify-content-between align-items-center gap-2"><small class="text-muted">Added @host.DateCreated.ToLocalTime().ToString("yyyy-MM-dd")</small>
+            @if (Model.CanReadLogs) { <a asp-page="/AuditLogs" asp-route-Resource="Hosts" asp-route-TargetId="@host.Id">History →</a> }</div>
+        </div></article>
+    }
+    </div>
+}

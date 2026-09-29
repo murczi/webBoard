@@ -1,0 +1,488 @@
+@page
+@model ModuleManagementModel
+@using Webboard.Domain.Model.AuditLogs
+@{
+    var canManage = Model.CanCreate || Model.CanUpdate || Model.CanDelete;
+    ViewData["Title"] = "Manage modules";
+    ViewData["FullWidth"] = true;
+}
+<div class="mode-bar"><a asp-page="/Index">← Back to modules</a><span class="mode-badge">Management</span></div>
+<div class="page-heading">
+    <div><p class="eyebrow">Module configuration</p><h1>@ViewData["Title"]</h1>
+        <p class="text-muted">Configure the services displayed on your dashboard.</p></div>
+    @if (Model.CanCreate) {
+        <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#module-modal" data-module-action="add">Add module</button>
+    }
+</div>
+@if (TempData["StatusMessage"] is string statusMessage) { <div class="alert alert-success" role="status">@statusMessage</div> }
+@if (TempData["ErrorMessage"] is string errorMessage) { <div class="alert alert-danger" role="alert">@errorMessage</div> }
+@if (Model.VisibleModules.Count == 0) {
+    <div class="empty-state"><h2>No visible modules</h2><p class="text-muted">Enabled modules will appear here.</p></div>
+} else {
+    <div class="module-grid">
+        @foreach (var module in Model.VisibleModules) {
+            <article class="card module-tile">
+                <div class="card-body d-flex flex-column">
+                    <h2 class="h5 text-break">@module.Name</h2>
+                    <p class="text-muted module-description">@(string.IsNullOrWhiteSpace(module.Description) ? "No description" : module.Description)</p>
+                    <div class="small text-muted mt-auto"><span class="module-type-badge">@module.TypeName</span>
+                        @if (!string.IsNullOrWhiteSpace(module.HostName)) { <span class="ms-2">@module.HostName</span> }
+                    </div>
+                    @if (canManage) { <partial name="Shared/_ModuleConfigurationActions" model="module"/> }
+                </div>
+            </article>
+        }
+    </div>
+}
+@if (Model.HiddenModules.Count > 0) {
+    <section class="mt-5" aria-labelledby="hidden-modules-title">
+        <h2 class="h4" id="hidden-modules-title">Hidden modules</h2>
+        <p class="text-muted">These modules are not on your dashboard. </p>
+        <div class="module-grid">
+            @foreach (var module in Model.HiddenModules) {
+                <article class="card module-tile module-tile--hidden">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between gap-2"><h3 class="h5 text-break">@module.Name</h3><span class="badge text-bg-secondary align-self-start">Hidden</span></div>
+                        <p class="text-muted module-description">@(string.IsNullOrWhiteSpace(module.Description) ? "No description" : module.Description)</p>
+                        <div class="small text-muted mt-auto"><span class="module-type-badge">@module.TypeName</span><span class="ms-2">@module.HostName</span></div>
+                        <partial name="Shared/_ModuleConfigurationActions" model="module"/>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.CanCreate || Model.CanUpdate) {
+    <div class="modal fade" id="module-modal" tabindex="-1" aria-labelledby="module-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <form method="post" asp-page-handler="Add" id="module-form">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5" id="module-modal-title">Add module</h2>
+                            <p class="text-muted small mb-0">Configure a service to display on the dashboard.</p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                        @if (Model.ReopenHandler is not null && TempData.Peek("ErrorMessage") is string formError) { <div class="alert alert-danger">@formError</div> }
+                        <input asp-for="Module.Id" type="hidden"/>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label asp-for="Module.Name" class="form-label"></label>
+                                <input asp-for="Module.Name" class="form-control" autocomplete="off"
+                                       placeholder="Status page"/>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Module.Description" class="form-label"></label>
+                                <textarea asp-for="Module.Description" class="form-control" rows="3"
+                                          placeholder="A short description of this module"></textarea>
+                            </div>
+                            <div class="col-md-6" id="module-host-field">
+                                <label asp-for="Module.HostId" class="form-label"></label>
+                                <div class="input-group input-group-sm searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search hosts…"
+                                           aria-label="Search hosts" data-search-select="Module_HostId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_HostId"></span>
+                                </div>
+                                <select asp-for="Module.HostId" class="form-select">
+                                    <option value="">No host (HTTP/S or Minecraft)</option>
+                                    @foreach (var host in Model.Hosts) {
+                                        <option value="@host.Id">@host.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6" id="module-type-field">
+                                <label asp-for="Module.TypeId" class="form-label"></label>
+                                <div class="input-group input-group-sm searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search module types…"
+                                           aria-label="Search module types" data-search-select="Module_TypeId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_TypeId"></span>
+                                </div>
+                                <select asp-for="Module.TypeId" class="form-select" required>
+                                    @foreach (var type in Model.Types) {
+                                        <option value="@type.Id" data-type-name="@type.Name">@type.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12" id="module-health-url-field">
+                                <label asp-for="Module.HealthCheckUrl" class="form-label"></label>
+                                <input asp-for="Module.HealthCheckUrl" class="form-control" type="url"
+                                       placeholder="https://service.example/health"/>
+                                <div class="form-text">Optional. A successful HTTP response is shown as healthy.</div>
+                            </div>
+                            <div class="col-12 d-none" id="module-container-field">
+                                <label asp-for="Module.ContainerId" class="form-label"></label>
+                                <div class="input-group searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search containers by name, image, or status…"
+                                           aria-label="Search Docker containers" data-search-select="Module_ContainerId"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_ContainerId"></span>
+                                </div>
+                                <select asp-for="Module.ContainerId" class="form-select" disabled>
+                                    <option value="">Select a host to load containers</option>
+                                </select>
+                                <div class="form-text" id="module-container-help">
+                                    Containers are loaded live from the selected host's agent.
+                                </div>
+                            </div>
+                            <div class="col-12 d-none" id="module-service-field">
+                                <label asp-for="Module.ServiceName" class="form-label"></label>
+                                <div class="input-group searchable-select-search mb-2">
+                                    <span class="input-group-text" aria-hidden="true">&#128269;</span>
+                                    <input class="form-control" type="search" placeholder="Search services by unit, description, or status…"
+                                           aria-label="Search systemd services" data-search-select="Module_ServiceName"/>
+                                    <span class="input-group-text search-result-count" data-search-count="Module_ServiceName"></span>
+                                </div>
+                                <select asp-for="Module.ServiceName" class="form-select" disabled>
+                                    <option value="">Select a host to load services</option>
+                                </select>
+                                <div class="form-text" id="module-service-help">
+                                    Services are loaded live from the selected host's agent.
+                                </div>
+                            </div>
+                            <div class="col-12 d-none" id="module-minecraft-field">
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <label asp-for="Module.MinecraftServerAddress" class="form-label"></label>
+                                        <input asp-for="Module.MinecraftServerAddress" class="form-control"
+                                               placeholder="minecraft.example.com" disabled/>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="Module.MinecraftServerPort" class="form-label"></label>
+                                        <input asp-for="Module.MinecraftServerPort" class="form-control" type="number"
+                                               min="1" max="65535" value="25565" disabled/>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="form-text">Minecraft Java Edition server-list ping. DNS SRV records are not resolved; enter the actual port.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Module.ManagementUrl" class="form-label"></label>
+                                <input asp-for="Module.ManagementUrl" class="form-control" type="url"
+                                       placeholder="https://service.example"/>
+                                <div class="form-text">Optional. Adds an Open button to the module tile.</div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input asp-for="Module.IsEnabled" class="form-check-input"/>
+                                    <label asp-for="Module.IsEnabled" class="form-check-label"></label>
+                                </div>
+                            </div>
+                            <div class="col-12 d-none" id="module-audit-comment-field">
+                                <label for="module-audit-comment" class="form-label">Audit comment</label>
+                                <textarea class="form-control" id="module-audit-comment" name="AuditComment"
+                                          rows="2" maxlength="@AuditLogModel.MaxCommentLength" disabled
+                                          placeholder="Why is this change being made?"></textarea>
+                                <div class="form-text">Required when editing. Maximum @AuditLogModel.MaxCommentLength characters.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="save-module">Add module</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+
+
+@section Scripts {
+
+    <script>
+        (() => {
+            const form = document.getElementById('module-form');
+            if (!form) return;
+
+            const title = document.getElementById('module-modal-title');
+            const id = document.getElementById('Module_Id');
+            const name = document.getElementById('Module_Name');
+            const description = document.getElementById('Module_Description');
+            const host = document.getElementById('Module_HostId');
+            const hostField = document.getElementById('module-host-field');
+            const type = document.getElementById('Module_TypeId');
+            const typeField = document.getElementById('module-type-field');
+            const healthUrl = document.getElementById('Module_HealthCheckUrl');
+            const healthUrlField = document.getElementById('module-health-url-field');
+            const containerField = document.getElementById('module-container-field');
+            const container = document.getElementById('Module_ContainerId');
+            const containerHelp = document.getElementById('module-container-help');
+            const serviceField = document.getElementById('module-service-field');
+            const service = document.getElementById('Module_ServiceName');
+            const serviceHelp = document.getElementById('module-service-help');
+            const minecraftField = document.getElementById('module-minecraft-field');
+            const minecraftAddress = document.getElementById('Module_MinecraftServerAddress');
+            const minecraftPort = document.getElementById('Module_MinecraftServerPort');
+            const managementUrl = document.getElementById('Module_ManagementUrl');
+            const enabled = document.getElementById('Module_IsEnabled');
+            const auditCommentField = document.getElementById('module-audit-comment-field');
+            const auditComment = document.getElementById('module-audit-comment');
+            const saveButton = document.getElementById('save-module');
+            const containersUrl = '@Url.Page("/ModuleManagement", "Containers")';
+            const servicesUrl = '@Url.Page("/ModuleManagement", "Services")';
+
+            const isDockerType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'docker';
+            const isSystemdType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'systemd';
+            const isMinecraftType = () =>
+                type.selectedOptions[0]?.dataset.typeName?.toLowerCase() === 'minecraft';
+
+            const updateSearch = selectId => {
+                const select = document.getElementById(selectId);
+                const search = form.querySelector(`[data-search-select="${selectId}"]`);
+                const count = form.querySelector(`[data-search-count="${selectId}"]`);
+                if (!select || !search || !count) return;
+                const query = search.value.trim().toLocaleLowerCase();
+                const options = [...select.options].filter(option => option.value);
+                let visible = 0;
+                options.forEach(option => {
+                    const matches = !query || option.text.toLocaleLowerCase().includes(query) || option.selected;
+                    option.hidden = !matches;
+                    if (matches) visible++;
+                });
+                count.textContent = query ? `${visible} found` : `${options.length} total`;
+                count.classList.toggle('search-result-count--active', Boolean(query));
+            };
+
+            form.querySelectorAll('[data-search-select]').forEach(search => {
+                search.addEventListener('input', () => updateSearch(search.dataset.searchSelect));
+                updateSearch(search.dataset.searchSelect);
+            });
+
+            const setContainerPlaceholder = (message, selectedContainerId = '') => {
+                container.replaceChildren();
+                const option = new Option(message, selectedContainerId);
+                option.selected = true;
+                container.add(option);
+                updateSearch('Module_ContainerId');
+            };
+
+            const loadContainers = async (selectedContainerId = '') => {
+                if (!host.value) {
+                    setContainerPlaceholder('Select a host to load containers', selectedContainerId);
+                    container.disabled = true;
+                    containerHelp.textContent = 'A host with a Docker-enabled agent is required.';
+                    return;
+                }
+
+                setContainerPlaceholder('Loading containers…');
+                container.disabled = true;
+                containerHelp.textContent = 'Loading containers live from the selected host…';
+                try {
+                    const response = await fetch(`${containersUrl}&hostId=${encodeURIComponent(host.value)}`);
+                    if (!response.ok) throw new Error('Container request failed');
+                    const containers = await response.json();
+                    container.replaceChildren(new Option('Select a container', ''));
+                    containers.forEach(item => {
+                        const label = `${item.name} — ${item.image} (${item.status})`;
+                        container.add(new Option(label, item.id));
+                    });
+                    if (selectedContainerId && !containers.some(item => item.id === selectedContainerId))
+                        container.add(new Option('Previously selected container (not currently found)', selectedContainerId));
+                    container.value = selectedContainerId;
+                    container.disabled = false;
+                    containerHelp.textContent = containers.length
+                        ? 'Containers loaded live from the selected host.'
+                        : 'No Docker containers were found on this host.';
+                    updateSearch('Module_ContainerId');
+                }
+                catch {
+                    setContainerPlaceholder('Unable to load containers', selectedContainerId);
+                    container.disabled = false;
+                    containerHelp.textContent = 'The host agent could not load Docker containers. Check its Docker socket access.';
+                }
+            };
+
+            const setServicePlaceholder = (message, selectedServiceName = '') => {
+                service.replaceChildren();
+                const option = new Option(message, selectedServiceName);
+                option.selected = true;
+                service.add(option);
+                updateSearch('Module_ServiceName');
+            };
+
+            const loadServices = async (selectedServiceName = '') => {
+                if (!host.value) {
+                    setServicePlaceholder('Select a host to load services', selectedServiceName);
+                    service.disabled = true;
+                    serviceHelp.textContent = 'A host with a systemd-enabled agent is required.';
+                    return;
+                }
+
+                setServicePlaceholder('Loading services…');
+                service.disabled = true;
+                serviceHelp.textContent = 'Discovering systemd services live on the selected host…';
+                try {
+                    const response = await fetch(`${servicesUrl}&hostId=${encodeURIComponent(host.value)}`);
+                    if (!response.ok) {
+                        const problem = await response.json().catch(() => null);
+                        throw new Error(problem?.error ?? 'Service request failed.');
+                    }
+                    const services = await response.json();
+                    service.replaceChildren(new Option('Select a service', ''));
+                    services.forEach(item => {
+                        const label = `${item.name} — ${item.description} (${item.activeState}/${item.subState})`;
+                        service.add(new Option(label, item.name));
+                    });
+                    if (selectedServiceName && !services.some(item => item.name === selectedServiceName))
+                        service.add(new Option('Previously selected service (not currently found)', selectedServiceName));
+                    service.value = selectedServiceName;
+                    service.disabled = false;
+                    serviceHelp.textContent = services.length
+                        ? 'Services loaded live from the selected host. Search by unit, description, or status.'
+                        : 'No systemd services were found on this host.';
+                    updateSearch('Module_ServiceName');
+                }
+                catch (error) {
+                    setServicePlaceholder('Unable to load services', selectedServiceName);
+                    service.disabled = false;
+                    serviceHelp.textContent = error instanceof Error
+                        ? error.message
+                        : 'The host agent could not load systemd services. Check systemd access.';
+                }
+            };
+
+            const syncModuleTypeFields = async (
+                selectedContainerId = '',
+                selectedServiceName = '',
+                selectedMinecraftAddress = '',
+                selectedMinecraftPort = '') => {
+                const docker = isDockerType();
+                const systemd = isSystemdType();
+                const minecraft = isMinecraftType();
+                hostField.classList.toggle('d-none', minecraft);
+                typeField.classList.toggle('col-md-6', !minecraft);
+                typeField.classList.toggle('col-12', minecraft);
+                healthUrlField.classList.toggle('d-none', docker || systemd || minecraft);
+                healthUrl.disabled = docker || systemd || minecraft;
+                containerField.classList.toggle('d-none', !docker);
+                container.required = docker;
+                serviceField.classList.toggle('d-none', !systemd);
+                service.required = systemd;
+                minecraftField.classList.toggle('d-none', !minecraft);
+                minecraftAddress.disabled = !minecraft;
+                minecraftAddress.required = minecraft;
+                minecraftPort.disabled = !minecraft;
+                minecraftPort.required = minecraft;
+                if (docker) {
+                    healthUrl.value = '';
+                    service.disabled = true;
+                    service.value = '';
+                    await loadContainers(selectedContainerId);
+                }
+                else if (systemd) {
+                    healthUrl.value = '';
+                    container.disabled = true;
+                    container.value = '';
+                    await loadServices(selectedServiceName);
+                }
+                else if (minecraft) {
+                    host.value = '';
+                    healthUrl.value = '';
+                    container.disabled = true;
+                    container.value = '';
+                    service.disabled = true;
+                    service.value = '';
+                    minecraftAddress.value = selectedMinecraftAddress;
+                    minecraftPort.value = selectedMinecraftPort || '25565';
+                }
+                else {
+                    container.disabled = true;
+                    container.value = '';
+                    service.disabled = true;
+                    service.value = '';
+                    minecraftAddress.value = '';
+                    minecraftPort.value = '25565';
+                }
+            };
+
+            const setAuditCommentRequired = required => {
+                auditCommentField.classList.toggle('d-none', !required);
+                auditComment.disabled = !required;
+                auditComment.required = required;
+                auditComment.value = '';
+            };
+
+            document.querySelector('[data-module-action="add"]')?.addEventListener('click', () => {
+                form.action = '@Url.Page("/ModuleManagement", "Add")';
+                form.reset();
+                id.value = '0';
+                host.value = '';
+                enabled.checked = true;
+                title.textContent = 'Add module';
+                saveButton.textContent = 'Add module';
+                setAuditCommentRequired(false);
+                form.querySelectorAll('[data-search-select]').forEach(search => search.value = '');
+                void syncModuleTypeFields();
+                updateSearch('Module_HostId');
+                updateSearch('Module_TypeId');
+            });
+
+            document.querySelectorAll('.js-edit-module').forEach(button => {
+                button.addEventListener('click', () => {
+                    form.action = '@Url.Page("/ModuleManagement", "Update")';
+                    id.value = button.dataset.moduleId;
+                    name.value = button.dataset.moduleName;
+                    description.value = button.dataset.moduleDescription ?? '';
+                    host.value = button.dataset.moduleHostId ?? '';
+                    type.value = button.dataset.moduleTypeId;
+                    healthUrl.value = button.dataset.moduleHealthUrl ?? '';
+                    managementUrl.value = button.dataset.moduleManagementUrl ?? '';
+                    enabled.checked = button.dataset.moduleEnabled === 'true';
+                    title.textContent = 'Edit module';
+                    saveButton.textContent = 'Save changes';
+                    setAuditCommentRequired(true);
+                    form.querySelectorAll('[data-search-select]').forEach(search => search.value = '');
+                    ['Module_HostId', 'Module_TypeId', 'Module_ContainerId', 'Module_ServiceName']
+                        .forEach(updateSearch);
+                    void syncModuleTypeFields(
+                        button.dataset.moduleContainerId ?? '',
+                        button.dataset.moduleServiceName ?? '',
+                        button.dataset.moduleMinecraftAddress ?? '',
+                        button.dataset.moduleMinecraftPort ?? '');
+                });
+            });
+
+            type.addEventListener('change', () => void syncModuleTypeFields());
+            host.addEventListener('change', () => {
+                if (isDockerType()) void loadContainers();
+                if (isSystemdType()) void loadServices();
+            });
+
+            const retry = @Json.Serialize(Model.ReopenHandler);
+            if (retry) {
+                form.action = retry === 'Update' ? '@Url.Page("/ModuleManagement", "Update")' : '@Url.Page("/ModuleManagement", "Add")';
+                title.textContent = retry === 'Update' ? 'Edit module' : 'Add module';
+                saveButton.textContent = retry === 'Update' ? 'Save changes' : 'Add module';
+                setAuditCommentRequired(retry === 'Update');
+                auditComment.value = @Json.Serialize(Model.AuditComment);
+                void syncModuleTypeFields(
+                    @Json.Serialize(Model.Module.ContainerId ?? ""),
+                    @Json.Serialize(Model.Module.ServiceName ?? ""),
+                    @Json.Serialize(Model.Module.MinecraftServerAddress ?? ""),
+                    @Json.Serialize(Model.Module.MinecraftServerPort?.ToString() ?? ""));
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('module-modal')).show();
+            }
+
+            form.addEventListener('submit', () => {
+                // A select is omitted from form data while disabled. Make sure the live
+                // Docker selection is posted even if a container refresh just completed.
+                if (isDockerType() && container.value)
+                    container.disabled = false;
+                if (isSystemdType() && service.value)
+                    service.disabled = false;
+                saveButton.disabled = true;
+                saveButton.textContent = 'Saving…';
+            });
+        })();
+    </script>
+}

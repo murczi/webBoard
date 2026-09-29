@@ -1,0 +1,32 @@
+@model Webboard.Domain.Model.Modules.ModuleModel
+@{
+    var canUpdate = ModuleAccess.Has(User, ModuleAccess.Update);
+    var canDelete = ModuleAccess.Has(User, ModuleAccess.Delete);
+    var canReadLogs = AuditLogAccess.HasRead(User);
+}
+<div class="configuration-actions d-flex justify-content-between gap-2 mt-3 pt-3">
+    @if (canUpdate) {
+        <button type="button" class="btn btn-sm btn-outline-primary js-edit-module"
+                data-bs-toggle="modal" data-bs-target="#module-modal"
+                data-module-id="@Model.Id" data-module-name="@Model.Name"
+                data-module-description="@Model.Description" data-module-host-id="@Model.HostId"
+                data-module-type-id="@Model.TypeId" data-module-health-url="@Model.HealthCheckUrl"
+                data-module-container-id="@Model.ContainerId" data-module-service-name="@Model.ServiceName"
+                data-module-minecraft-address="@Model.MinecraftServerAddress" data-module-minecraft-port="@Model.MinecraftServerPort"
+                data-module-management-url="@Model.ManagementUrl" data-module-enabled="@Model.IsEnabled.ToString().ToLowerInvariant()">Edit module</button>
+    }
+    @if (canReadLogs || canDelete) {
+        <div class="dropdown ms-auto">
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="More actions for @Model.Name">More</button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                @if (canReadLogs) { <li><a class="dropdown-item" asp-page="/AuditLogs" asp-route-Resource="Modules" asp-route-TargetId="@Model.Id">Audit history</a></li> }
+                @if (canReadLogs && canDelete) { <li><hr class="dropdown-divider"/></li> }
+                @if (canDelete) {
+                    <li><form method="post" asp-page="/ModuleManagement" asp-page-handler="Delete" asp-route-moduleId="@Model.Id" data-confirm-delete="@Model.Name">
+                        <button class="dropdown-item text-danger" type="submit">Delete module</button>
+                    </form></li>
+                }
+            </ul>
+        </div>
+    }
+</div>

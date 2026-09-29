@@ -1,10 +1,12 @@
-﻿@page
+@page
 @model UserManagementModel
 @using Webboard.Domain.Model.AuditLogs
 @{
     ViewData["Title"] = "User management";
     ViewData["FullWidth"] = true;
 }
+
+<div class="mode-bar"><a asp-page="/Users">← Back to users</a><span class="mode-badge">Management</span></div>
 
 <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
     <div>
@@ -93,7 +95,7 @@
                                                 <form method="post"
                                                       asp-page-handler="Delete"
                                                       asp-route-userId="@user.Id"
-                                                      onsubmit="return confirm('Delete this user? They will no longer be able to sign in.');">
+                                                      data-confirm-delete="@user.Name">
                                                     <button type="submit" class="dropdown-item text-danger">Delete user</button>
                                                 </form>
                                             }
@@ -123,6 +125,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                    @if (Model.RetryUserId.HasValue && TempData.Peek("ErrorMessage") is string formError) { <div class="alert alert-danger">@formError</div> }
                     <input type="hidden" name="userId" id="access-user-id"/>
                     <div id="access-loading" class="text-center text-muted py-5" role="status">
                         Loading access settings&hellip;
@@ -277,6 +281,19 @@
                     }
                 });
             });
+
+            const retryUserId = @Json.Serialize(Model.RetryUserId);
+            if (retryUserId) {
+                userIdInput.value = retryUserId;
+                userLabel.textContent = @Json.Serialize(Model.RetryUserName);
+                renderAccess(@Json.Serialize(Model.Access));
+                auditComment.value = @Json.Serialize(Model.AuditComment);
+                loading.classList.add('d-none');
+                fields.classList.remove('d-none');
+                note.classList.remove('d-none');
+                saveButton.disabled = false;
+                modal.show();
+            }
 
             form.addEventListener('submit', () => {
                 saveButton.disabled = true;

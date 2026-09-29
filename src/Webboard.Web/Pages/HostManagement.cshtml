@@ -6,6 +6,8 @@
     ViewData["FullWidth"] = true;
 }
 
+<div class="mode-bar"><a asp-page="/Hosts">← Back to hosts</a><span class="mode-badge">Management</span></div>
+
 <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
     <div>
         <p class="text-primary fw-semibold text-uppercase small mb-1">Infrastructure</p>
@@ -98,7 +100,7 @@
                                         @if (Model.CanDelete) {
                                             <li>
                                                 <form method="post" asp-page-handler="Delete" asp-route-hostId="@host.Id"
-                                                      onsubmit="return confirm('Delete this host? Its configuration will be removed from Webboard.');">
+                                                      data-confirm-delete="@host.Name">
                                                     <button type="submit" class="dropdown-item text-danger">Delete host</button>
                                                 </form>
                                             </li>
@@ -129,6 +131,8 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
+                        <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                        @if (Model.ReopenHandler is not null && TempData.Peek("ErrorMessage") is string formError) { <div class="alert alert-danger">@formError</div> }
                         <input asp-for="Host.Id" type="hidden"/>
                         <div class="mb-3">
                             <label asp-for="Host.Name" class="form-label"></label>
@@ -250,6 +254,16 @@
                     testButton.textContent = 'Test agent';
                 }
             });
+
+            const retry = @Json.Serialize(Model.ReopenHandler);
+            if (retry) {
+                form.action = retry === 'Update' ? '@Url.Page("/HostManagement", "Update")' : '@Url.Page("/HostManagement", "Add")';
+                title.textContent = retry === 'Update' ? 'Configure host' : 'Add host';
+                saveButton.textContent = retry === 'Update' ? 'Test and save changes' : 'Test and add host';
+                setAuditCommentRequired(retry === 'Update');
+                auditComment.value = @Json.Serialize(Model.AuditComment);
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('host-modal')).show();
+            }
 
             form.addEventListener('submit', () => {
                 saveButton.disabled = true;

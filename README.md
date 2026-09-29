@@ -258,6 +258,12 @@ must not be used in production.
 
 ## Workspace navigation and audit history
 
+The sidebar opens read-only **Modules**, **Hosts**, and **Users** pages. Users
+with write permissions can switch to the corresponding management page with
+**Manage**, then return with **Back to …**. Module configuration includes hidden
+modules; the viewing dashboard shows enabled modules only. Host Enabled/Disabled
+labels describe configuration, not live reachability.
+
 **Audit log** requires `AuditLogs:read` and shows all recorded events, including
 history for deleted items. Filter by resource, action, actor, or UTC date range.
 Item history links preselect a target; remove that filter to broaden the view.
