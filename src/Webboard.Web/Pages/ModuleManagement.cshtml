@@ -3,13 +3,13 @@
 @using Webboard.Domain.Model.AuditLogs
 @{
     var canManage = Model.CanCreate || Model.CanUpdate || Model.CanDelete;
-    ViewData["Title"] = "Manage modules";
+    ViewData["Title"] = canManage ? "Manage modules" : "Arrange modules";
     ViewData["FullWidth"] = true;
 }
-<div class="mode-bar"><a asp-page="/Index">← Back to modules</a><span class="mode-badge">Management</span></div>
+<div class="mode-bar"><a asp-page="/Index">← Back to modules</a><span class="mode-badge">Arrangement preview</span></div>
 <div class="page-heading">
-    <div><p class="eyebrow">Module configuration</p><h1>@ViewData["Title"]</h1>
-        <p class="text-muted">Configure the services displayed on your dashboard.</p></div>
+    <div><p class="eyebrow">Your dashboard layout</p><h1>@ViewData["Title"]</h1>
+        <p class="text-muted">Drag tiles by their handles to arrange your dashboard. Changes are personal to this browser.</p></div>
     @if (Model.CanCreate) {
         <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#module-modal" data-module-action="add">Add module</button>
     }
@@ -17,12 +17,24 @@
 @if (TempData["StatusMessage"] is string statusMessage) { <div class="alert alert-success" role="status">@statusMessage</div> }
 @if (TempData["ErrorMessage"] is string errorMessage) { <div class="alert alert-danger" role="alert">@errorMessage</div> }
 @if (Model.VisibleModules.Count == 0) {
-    <div class="empty-state"><h2>No visible modules</h2><p class="text-muted">Enabled modules will appear here.</p></div>
+    <div class="empty-state"><h2>No visible modules to arrange</h2><p class="text-muted">Enabled modules will appear in this preview.</p></div>
 } else {
-    <div class="module-grid">
+    <div class="arrangement-toolbar">
+        <span id="arrangement-status" class="small text-muted" role="status" aria-live="polite">Saved in this browser · Drag a handle or use the arrow buttons.</span>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-reset-order>Reset arrangement</button>
+    </div>
+    <div class="module-grid arrangement-grid" data-module-grid data-arrange="true" data-order-account="@Model.CurrentUserId" aria-label="Module arrangement">
         @foreach (var module in Model.VisibleModules) {
-            <article class="card module-tile">
+            <article class="card module-tile arrangement-tile" data-module-id="@module.Id" data-module-name="@module.Name">
                 <div class="card-body d-flex flex-column">
+                    <div class="arrangement-controls">
+                        <button class="drag-handle" type="button" aria-label="Drag @module.Name to reorder" title="Drag to reorder"><span aria-hidden="true">⠿</span></button>
+                        <span class="arrangement-position small text-muted"></span>
+                        <div class="d-flex gap-1 ms-auto" role="group" aria-label="Move @module.Name">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-move="-1" aria-label="Move @module.Name earlier">←</button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-move="1" aria-label="Move @module.Name later">→</button>
+                        </div>
+                    </div>
                     <h2 class="h5 text-break">@module.Name</h2>
                     <p class="text-muted module-description">@(string.IsNullOrWhiteSpace(module.Description) ? "No description" : module.Description)</p>
                     <div class="small text-muted mt-auto"><span class="module-type-badge">@module.TypeName</span>
@@ -37,7 +49,7 @@
 @if (Model.HiddenModules.Count > 0) {
     <section class="mt-5" aria-labelledby="hidden-modules-title">
         <h2 class="h4" id="hidden-modules-title">Hidden modules</h2>
-        <p class="text-muted">These modules are not on your dashboard. </p>
+        <p class="text-muted">These modules are not on your dashboard. Their saved positions are retained when shown again.</p>
         <div class="module-grid">
             @foreach (var module in Model.HiddenModules) {
                 <article class="card module-tile module-tile--hidden">
@@ -196,6 +208,7 @@
 
 
 @section Scripts {
+    <script src="~/js/module-order.js" asp-append-version="true"></script>
 
     <script>
         (() => {

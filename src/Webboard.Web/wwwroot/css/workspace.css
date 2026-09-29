@@ -50,3 +50,19 @@ a { text-underline-offset:3px; }
 :focus-visible { outline:2px solid var(--workspace-accent); outline-offset:3px; }
 [data-bs-theme=dark] .btn-outline-secondary { --bs-btn-color:#b4bfd2; --bs-btn-border-color:#637088; --bs-btn-hover-bg:#344059; --bs-btn-hover-color:#fff; --bs-btn-disabled-color:#a5b1c5; }
 .table-responsive,.user-table-responsive { position:relative; }
+
+/* Arrangement previews preserve dashboard tile proportions without service actions. */
+.arrangement-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.arrangement-toolbar .btn { flex-shrink:0; }
+.arrangement-tile { position:relative; border-style:dashed !important; }
+.arrangement-controls { display:flex; align-items:center; gap:.65rem; margin-bottom:1rem; }
+.drag-handle { display:grid; place-items:center; width:2rem; height:2rem; border:0; border-radius:.4rem; background:var(--bs-tertiary-bg); color:var(--workspace-muted); font-size:1.5rem; line-height:1; cursor:grab; touch-action:none; }
+.drag-handle:active { cursor:grabbing; }
+.configuration-actions { border-top:1px solid var(--workspace-line); }
+.arrangement-tile.is-dragging { opacity:.45; }
+.arrangement-tile.drop-before::before,.arrangement-tile.drop-after::after { content:""; position:absolute; top:0; bottom:0; width:4px; border-radius:4px; background:var(--workspace-accent); pointer-events:none; }
+.arrangement-tile.drop-before::before { left:-.75rem; }
+.arrangement-tile.drop-after::after { right:-.75rem; }
+.arrangement-drag-preview { position:fixed; z-index:1100; pointer-events:none; padding:.65rem 1rem; max-width:220px; overflow-wrap:anywhere; border-radius:.5rem; border:1px solid var(--workspace-accent); background:var(--workspace-panel); color:var(--bs-body-color); box-shadow:0 8px 24px #0003; }
+.is-arranging { user-select:none; }
+@media(max-width:575px) { .arrangement-toolbar { align-items:flex-start; flex-direction:column; } }

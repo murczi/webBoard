@@ -20,6 +20,8 @@ public class IndexModel(
     public bool CanUpdate => ModuleAccess.Has(User, ModuleAccess.Update);
     public bool CanDelete => ModuleAccess.Has(User, ModuleAccess.Delete);
     public bool CanReadLogs => AuditLogAccess.HasRead(User);
+    public int? CurrentUserId => int.TryParse(
+        User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : null;
 
     public async Task OnGetAsync(CancellationToken cancellationToken) {
         var allModules = CanRead

@@ -264,6 +264,24 @@ with write permissions can switch to the corresponding management page with
 modules; the viewing dashboard shows enabled modules only. Host Enabled/Disabled
 labels describe configuration, not live reachability.
 
+Everyone with module read access can open **Arrange modules**. Users with write
+permissions enter the same preview through **Manage modules**, with additional
+configuration controls according to their permissions. Readers cannot see editing
+forms, configuration actions, or hidden modules.
+
+The arrangement preview uses dashboard-sized tiles without Open links or live
+health checks. Drag visible tiles by their handles using a mouse or touch, or use
+the earlier/later buttons and arrow keys on a focused handle. Ordering saves
+automatically in local storage, separately for each account in the current
+browser, and is applied to the viewing dashboard. It does not sync between devices
+or create audit events. **Reset arrangement** restores alphabetical order. If
+storage is unavailable, the page explains that changes could not be saved.
+
+Hidden modules remain in a separate configuration section. Their saved positions
+are retained when they become visible again; newly encountered modules are appended
+in alphabetical order. Hosts and Users do not support rearrangement. Personal
+module ordering requires no database migration.
+
 The theme selector supports **System**, **Light**, and **Dark**, saved in this
 browser. System follows the device preference.
 
