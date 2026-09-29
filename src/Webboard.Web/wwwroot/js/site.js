@@ -1,4 +1,8 @@
-﻿// Please see documentation at https://learn.microsoft.com/aspnet/core/client-side/bundling-and-minification
-// for details on configuring this project to bundle and minify static web assets.
-
-// Write your JavaScript code.
+const auditResource = document.querySelector('.audit-filters #Resource');
+auditResource?.addEventListener('change', () => {
+    const target = document.querySelector('input[name="TargetId"]');
+    if (target) {
+        target.value = '';
+        target.nextElementSibling?.remove();
+    }
+});

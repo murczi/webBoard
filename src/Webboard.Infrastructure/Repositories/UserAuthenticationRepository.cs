@@ -89,6 +89,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
         dbContext.Users.Add(entity);
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
+            Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = "Created user.",
             DateCreated = now,
             Actor = entity,

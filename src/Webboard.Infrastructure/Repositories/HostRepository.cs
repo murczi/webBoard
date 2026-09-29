@@ -49,6 +49,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
             ActorId = actorId,
+            Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
             DateCreated = DateTime.UtcNow,
             Host = entity,
@@ -75,7 +76,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!updated)
             return false;
 
-        AddAuditLog(host.Id, actorId, auditComment);
+        AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
@@ -97,16 +98,17 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!deleted)
             return false;
 
-        AddAuditLog(hostId, actorId, auditComment);
+        AddAuditLog(hostId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
-    private void AddAuditLog(int hostId, int actorId, string comment) =>
+    private void AddAuditLog(int hostId, int actorId, string comment, Webboard.Domain.Model.AuditLogs.AuditAction action) =>
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
             ActorId = actorId,
+            Action = action,
             Comment = comment,
             DateCreated = DateTime.UtcNow,
             HostId = hostId,

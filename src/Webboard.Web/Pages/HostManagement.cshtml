@@ -89,9 +89,7 @@
                                         }
                                         @if (Model.CanReadLogs) {
                                             <li>
-                                                <button type="button" class="dropdown-item js-view-logs"
-                                                        data-logs-url="@Url.Page("/HostManagement", "Logs", new { hostId = host.Id })"
-                                                        data-logs-target="@host.Name">Logs</button>
+                                                <a class="dropdown-item" asp-page="/AuditLogs" asp-route-Resource="Hosts" asp-route-TargetId="@host.Id">Audit history</a>
                                             </li>
                                         }
                                         @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
@@ -168,14 +166,10 @@
     </div>
 }
 
-@if (Model.CanReadLogs) {
-    <partial name="Shared/_AuditLogModal"/>
-}
+
 
 @section Scripts {
-    @if (Model.CanReadLogs) {
-        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
-    }
+
     <script>
         (() => {
             const form = document.getElementById('host-form');

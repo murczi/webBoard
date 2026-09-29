@@ -9,6 +9,14 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
     public void Configure(EntityTypeBuilder<AuditLogEntity> builder) {
         builder.ToTable("AuditLogs");
 
+        builder.Property(log => log.Action).HasDefaultValue(AuditAction.Legacy);
+        builder.HasIndex(log => new { log.DateCreated, log.Id });
+        builder.HasIndex(log => new { log.Action, log.DateCreated, log.Id });
+        builder.HasIndex(log => new { log.ActorId, log.DateCreated, log.Id });
+        builder.HasIndex(log => new { log.ModuleId, log.DateCreated, log.Id });
+        builder.HasIndex(log => new { log.HostId, log.DateCreated, log.Id });
+        builder.HasIndex(log => new { log.UserId, log.DateCreated, log.Id });
+
         builder.HasKey(keyExpression: log => log.Id);
 
         builder.HasOne(navigationExpression: log => log.Actor)

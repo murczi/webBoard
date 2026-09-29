@@ -255,3 +255,16 @@ these tests are skipped when the variable is unset.
 
 The checked-in development configuration contains a local-only signing key and
 must not be used in production.
+
+## Workspace navigation and audit history
+
+**Audit log** requires `AuditLogs:read` and shows all recorded events, including
+history for deleted items. Filter by resource, action, actor, or UTC date range.
+Item history links preselect a target; remove that filter to broaden the view.
+Results use server-side pagination with 25 events per page.
+
+This release requires the `AddAuditActionsAndPagingIndexes` database migration.
+Run the existing `--migrate` deployment step before starting the updated UI.
+Older events appear as **Legacy**; new events record explicit Create, Update,
+Delete, or Permissions changed actions. Existing comments are not interpreted
+to guess historical actions.

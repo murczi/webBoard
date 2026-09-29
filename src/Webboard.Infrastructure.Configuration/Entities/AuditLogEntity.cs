@@ -1,6 +1,8 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class AuditLogEntity {
+    public Webboard.Domain.Model.AuditLogs.AuditAction Action { get; set; }
+
     public int Id { get; set; }
 
     public int ActorId { get; set; }

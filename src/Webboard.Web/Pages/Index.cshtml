@@ -128,9 +128,7 @@ else {
                                         }
                                         @if (Model.CanReadLogs) {
                                             <li>
-                                                <button type="button" class="dropdown-item js-view-logs"
-                                                        data-logs-url="@Url.Page("/Index", "Logs", new { moduleId = tile.Module.Id })"
-                                                        data-logs-target="@tile.Module.Name">Logs</button>
+                                                <a class="dropdown-item" asp-page="/AuditLogs" asp-route-Resource="Modules" asp-route-TargetId="@tile.Module.Id">Audit history</a>
                                             </li>
                                         }
                                         @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
@@ -206,9 +204,7 @@ else {
                                     }
                                     @if (Model.CanReadLogs) {
                                         <li>
-                                            <button type="button" class="dropdown-item js-view-logs"
-                                                    data-logs-url="@Url.Page("/Index", "Logs", new { moduleId = module.Id })"
-                                                    data-logs-target="@module.Name">Logs</button>
+                                            <a class="dropdown-item" asp-page="/AuditLogs" asp-route-Resource="Modules" asp-route-TargetId="@module.Id">Audit history</a>
                                         </li>
                                     }
                                     @if ((Model.CanUpdate || Model.CanReadLogs) && Model.CanDelete) {
@@ -370,14 +366,10 @@ else {
     </div>
 }
 
-@if (Model.CanReadLogs) {
-    <partial name="Shared/_AuditLogModal"/>
-}
+
 
 @section Scripts {
-    @if (Model.CanReadLogs) {
-        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
-    }
+
     <script>
         (() => {
             const form = document.getElementById('module-form');

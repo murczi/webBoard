@@ -75,9 +75,7 @@
                                     }
                                     @if (Model.CanReadLogs) {
                                         <li>
-                                            <button type="button" class="dropdown-item js-view-logs"
-                                                    data-logs-url="@Url.Page("/UserManagement", "Logs", new { userId = user.Id })"
-                                                    data-logs-target="@user.Name">Logs</button>
+                                            <a class="dropdown-item" asp-page="/AuditLogs" asp-route-Resource="Users" asp-route-TargetId="@user.Id">Audit history</a>
                                         </li>
                                     }
                                     @if (Model.CanDeleteUsers) {
@@ -168,14 +166,10 @@
 
 }
 
-@if (Model.CanReadLogs) {
-    <partial name="Shared/_AuditLogModal"/>
-}
+
 
 @section Scripts {
-    @if (Model.CanReadLogs) {
-        <script src="~/js/audit-logs.js" asp-append-version="true"></script>
-    }
+
     <script>
         (() => {
             const modalElement = document.getElementById('access-modal');

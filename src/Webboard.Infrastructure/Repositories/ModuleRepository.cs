@@ -81,6 +81,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
             ActorId = actorId,
+            Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
             DateCreated = DateTime.UtcNow,
             Module = entity,
@@ -116,7 +117,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         if (!updated)
             return false;
 
-        AddAuditLog(module.Id, actorId, auditComment);
+        AddAuditLog(module.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
@@ -139,16 +140,17 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         if (!deleted)
             return false;
 
-        AddAuditLog(moduleId, actorId, auditComment);
+        AddAuditLog(moduleId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
-    private void AddAuditLog(int moduleId, int actorId, string comment) =>
+    private void AddAuditLog(int moduleId, int actorId, string comment, Webboard.Domain.Model.AuditLogs.AuditAction action) =>
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
             ActorId = actorId,
+            Action = action,
             Comment = comment,
             DateCreated = DateTime.UtcNow,
             ModuleId = moduleId,

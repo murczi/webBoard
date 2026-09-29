@@ -6,6 +6,7 @@
     <title>@ViewData["Title"] - Webboard.Web</title>
     <script type="importmap"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="~/css/workspace.css" asp-append-version="true"/>
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true"/>
     <link rel="stylesheet" href="~/Webboard.Web.styles.css" asp-append-version="true"/>
 </head>
@@ -36,6 +37,7 @@
                             </li>
                         }
                     }
+                    @if (AuditLogAccess.HasRead(User)) { <li class="nav-item"><a class="nav-link text-dark" asp-page="/AuditLogs">Audit log</a></li> }
                 </ul>
                 @if (User.Identity?.IsAuthenticated == true) {
                     <div class="dropdown">

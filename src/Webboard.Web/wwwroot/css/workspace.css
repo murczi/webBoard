@@ -1,0 +1,2 @@
+.audit-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1rem; align-items:end; }
+.audit-comment { min-width:220px; white-space:pre-wrap; overflow-wrap:anywhere; }

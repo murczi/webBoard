@@ -2,6 +2,11 @@ namespace Webboard.Infrastructure.Test;
 
 using System.IdentityModel.Tokens.Jwt;
 using Configuration;
+using Configuration.Entities;
+using Domain.Model.AuditLogs;
+using Domain.Model.Hosts;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Domain.Model.UserCrudAccess;
 using Domain.Services;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +48,85 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var repository = new UserAuthenticationRepository(db);
         Assert.True(await repository.CreateAsync(name, "unused-hash"));
         return (await repository.FindByNameAsync(name))!.Id;
+    }
+
+
+    [PostgresFact]
+    public async Task AuditSearchFiltersBeforePagingAndIncludesDeletedHistory() {
+        var actor = await Register("audit-actor");
+        var otherActor = await Register("other-actor");
+        await using var db = Context();
+        var host = new HostEntity { Name = "retired-host", AgentBaseUrl = "http://example.test", DeletionFlag = true, DateCreated = DateTime.UtcNow };
+        db.Hosts.Add(host);
+        await db.SaveChangesAsync();
+        var timestamp = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        for (var i = 0; i < 31; i++)
+            db.AuditLogs.Add(new AuditLogEntity {
+                ActorId = actor, HostId = host.Id, Actor = null!, Comment = $"change {i}",
+                DateCreated = timestamp, Action = AuditAction.Update
+            });
+        db.AuditLogs.Add(new AuditLogEntity {
+            ActorId = otherActor, UserId = actor, Actor = null!, Comment = "permission event",
+            DateCreated = timestamp.AddDays(1), Action = AuditAction.PermissionsChanged
+        });
+        await db.SaveChangesAsync();
+        await db.Users.Where(u => u.Id == actor).ExecuteUpdateAsync(u => u.SetProperty(x => x.DeletionFlag, true));
+        var service = new AuditLogService(new AuditLogRepository(db));
+        var query = new AuditLogQuery { Resource = "Hosts", Action = AuditAction.Update, ActorId = actor, TargetId = host.Id,
+            FromUtc = timestamp.Date, UntilUtc = timestamp.Date.AddDays(1) };
+        var first = await service.SearchAsync(query);
+        var second = await service.SearchAsync(query with { Page = 2 });
+        Assert.Equal(31, first.TotalItems);
+        Assert.Equal(25, first.Items.Count);
+        Assert.Equal(6, second.Items.Count);
+        Assert.Empty(first.Items.Select(x => x.Id).Intersect(second.Items.Select(x => x.Id)));
+        Assert.True(first.Items.Last().Id > second.Items.First().Id);
+        Assert.All(first.Items, log => {
+            Assert.Equal("retired-host", log.TargetName);
+            Assert.Equal("audit-actor", log.ActorName);
+            Assert.Equal(AuditAction.Update, log.Action);
+        });
+        Assert.Equal(1, (await service.SearchAsync(query with { Page = -10 })).Page);
+        Assert.Equal(2, (await service.SearchAsync(query with { Page = int.MaxValue })).Page);
+        Assert.Empty((await service.SearchAsync(query with { Action = AuditAction.Delete })).Items);
+        Assert.Single((await service.SearchAsync(new AuditLogQuery { Resource = "Users", ActorId = otherActor, Action = AuditAction.PermissionsChanged })).Items);
+        Assert.Contains(await service.GetActorsAsync(), item => item.Id == actor);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(query with { Resource = "Invalid" }));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(query with { Resource = null }));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(query with { Action = (AuditAction)99 }));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(query with { UntilUtc = timestamp.Date.AddDays(-1) }));
+    }
+
+    [PostgresFact]
+    public async Task ExistingAuditRowsMigrateAsLegacy() {
+        var actor = await Register("legacy-actor");
+        await using var db = Context();
+        var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""INSERT INTO "AuditLogs" ("ActorId", "UserId", "Comment", "DateCreated") VALUES ({actor}, {actor}, {"Created module."}, {DateTime.UtcNow})""");
+        await db.Database.MigrateAsync();
+        var result = await new AuditLogService(new AuditLogRepository(db)).SearchAsync(new AuditLogQuery { Action = AuditAction.Legacy });
+        Assert.Equal(2, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Equal(AuditAction.Legacy, item.Action));
+    }
+
+    [PostgresFact]
+    public async Task MutationsWriteExplicitActionsRegardlessOfComment() {
+        var actor = await Register("writer");
+        var target = await Register("target");
+        await using var db = Context();
+        var hosts = new HostRepository(db);
+        var host = new HostModel { Name = "test-host", AgentBaseUrl = "http://example.test", IsEnabled = true, DateCreated = DateTime.UtcNow };
+        await hosts.AddAsync(host, actor, "arbitrary comment");
+        await hosts.UpdateAsync(host, actor, "Created module.");
+        await hosts.DeleteAsync(host.Id, actor, "arbitrary comment");
+        var users = new UserCrudAccessRepository(db);
+        users.AddAuditLog(actor, target, "arbitrary comment");
+        await users.SaveChangesAsync();
+        await users.DeleteUserAsync(target, actor, "arbitrary comment");
+        var actions = await db.AuditLogs.OrderBy(log => log.Id).Select(log => log.Action).ToListAsync();
+        Assert.Equal(new[] { AuditAction.Create, AuditAction.Create, AuditAction.Create, AuditAction.Update, AuditAction.Delete, AuditAction.PermissionsChanged, AuditAction.Delete }, actions);
     }
 
     [PostgresFact]
