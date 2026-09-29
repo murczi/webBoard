@@ -1,0 +1,23 @@
+// Install on the HOST at /etc/polkit-1/rules.d/50-webboard-agent.rules.
+// The host account UID must match the Docker agent's UID.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== 'webboard-agent') return;
+
+    var units = ['example.service'];
+    var verbs = ['start', 'stop', 'restart'];
+    if (action.id === 'org.freedesktop.systemd1.manage-units' &&
+        units.indexOf(action.lookup('unit')) >= 0 &&
+        verbs.indexOf(action.lookup('verb')) >= 0) {
+        return polkit.Result.YES;
+    }
+
+    // Opt in only when enable/disable are required. systemd does not provide the
+    // target unit to this policy check; distribution policy can imply other unit
+    // controls too. Controls:Systemd is the per-unit boundary for API callers.
+    var allowUnitFileChanges = false;
+    if (allowUnitFileChanges &&
+        (action.id === 'org.freedesktop.systemd1.manage-unit-files' ||
+         action.id === 'org.freedesktop.systemd1.reload-daemon')) {
+        return polkit.Result.YES;
+    }
+});

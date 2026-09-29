@@ -102,7 +102,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var actor = await Register("legacy-actor");
         await using var db = Context();
         var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-        await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+        await db.GetService<IMigrator>().MigrateAsync("20260826164258_AddMinecraftModules");
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"""INSERT INTO "AuditLogs" ("ActorId", "UserId", "Comment", "DateCreated") VALUES ({actor}, {actor}, {"Created module."}, {DateTime.UtcNow})""");
         await db.Database.MigrateAsync();

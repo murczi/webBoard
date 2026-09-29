@@ -316,3 +316,11 @@ Run the existing `--migrate` deployment step before starting the updated UI.
 Older events appear as **Legacy**; new events record explicit Create, Update,
 Delete, or Permissions changed actions. Existing comments are not interpreted
 to guess historical actions.
+
+## Agent operations and audit foundation
+
+Authenticated agents expose allowlisted Docker and systemd controls. See the
+[agent guide](deploy/agent/README.md) for permitted actions and host authorization.
+`AddModuleOperationsAndPermissions` prepares operation audit records and permission
+storage. Apply migrations with all UI replicas stopped. The UI operation interface
+and consolidated permission follow in a separate change.

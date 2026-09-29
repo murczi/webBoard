@@ -5,6 +5,38 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 public sealed partial class SystemdClient {
+    private readonly IProcessRunner process;
+    public SystemdClient() : this(new ProcessRunner()) { }
+    public SystemdClient(IProcessRunner process) => this.process = process;
+    public async Task<OperationResult> ControlAsync(string serviceName, string operation, CancellationToken cancellationToken) {
+        if (!IsValidServiceName(serviceName) || serviceName.StartsWith('-') || operation is not ("start" or "stop" or "restart" or "enable" or "disable"))
+            throw new ArgumentException("Invalid systemd operation.");
+        if (operation is "enable" or "disable") {
+            // Call the host manager directly: systemctl's unit-file commands can operate
+            // on the container filesystem instead of the mounted host system bus.
+            string[] arguments = operation == "enable"
+                ? ["asbb", "1", serviceName, "false", "false"]
+                : ["asb", "1", serviceName, "false"];
+            var result = await CallManagerAsync(operation == "enable" ? "EnableUnitFiles" : "DisableUnitFiles", arguments, cancellationToken);
+            if (!result.Success) return result with { Output = null };
+            var reload = await CallManagerAsync("Reload", [], cancellationToken);
+            if (!reload.Success) return reload with {
+                Output = null,
+                Message = "Unit-file change completed, but reloading the host systemd manager failed. Verify the service and host reload permission before retrying."
+            };
+            return result with { Output = null };
+        }
+        var control = await process.RunAsync("/usr/bin/systemctl",
+            ["--no-ask-password", operation, "--", serviceName], TimeSpan.FromSeconds(30), cancellationToken);
+        return control with { Output = null };
+    }
+
+    private Task<OperationResult> CallManagerAsync(string method, string[] arguments, CancellationToken token) =>
+        process.RunAsync("/usr/bin/busctl",
+            new[] { "--system", "--allow-interactive-authorization=no", "--timeout=30s", "call",
+                "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", method }
+                .Concat(arguments).ToArray(), TimeSpan.FromSeconds(30), token);
+
     public async Task<IReadOnlyList<SystemdServiceDto>> GetServicesAsync(
         CancellationToken cancellationToken) {
         var output = await RunSystemctlAsync([
@@ -56,6 +88,9 @@ public sealed partial class SystemdClient {
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken,
         bool allowNonZeroExitCode = false) {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        cancellationToken = timeout.Token;
         var startInfo = new ProcessStartInfo
         {
             FileName = "systemctl",

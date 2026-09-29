@@ -8,6 +8,13 @@ using Webboard.Domain.Model.AuditLogs;
 public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
     public void Configure(EntityTypeBuilder<AuditLogEntity> builder) {
         builder.ToTable("AuditLogs");
+        builder.HasIndex(x => x.OperationId).IsUnique();
+        builder.Property(x => x.Operation).HasMaxLength(100);
+        builder.Property(x => x.Outcome).HasMaxLength(32);
+        builder.Property(x => x.Failure).HasMaxLength(1000);
+        builder.Property(x => x.Output).HasMaxLength(16384);
+        builder.Property(x => x.TargetSnapshot).HasMaxLength(300);
+
 
         builder.Property(log => log.Action).HasDefaultValue(AuditAction.Legacy);
         builder.HasIndex(log => new { log.DateCreated, log.Id });

@@ -15,7 +15,7 @@ WORKDIR /app
 
 USER root
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends systemd \
+    && apt-get install --yes --no-install-recommends systemd util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 ENV ASPNETCORE_HTTP_PORTS=8080

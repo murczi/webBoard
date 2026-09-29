@@ -7,6 +7,16 @@ services:
       Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
       Kestrel__Certificates__Default__Path: /tls/agent.pfx
       Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
+      # Operations default to off. Opt in exact targets and individual actions:
+      # Controls__Docker__0__Target: my-game-server
+      # Controls__Docker__0__Operations__0: start
+      # Controls__Docker__0__Operations__1: stop
+      # Controls__Docker__0__Operations__2: restart
+      # Controls__Systemd__0__Target: example.service
+      # Controls__Systemd__0__Operations__0: restart
+      # Enable/disable also require the host polkit setup in README.md.
+    # Optional: override to match a dedicated host account for systemd policy.
+    # user: "1654:1654"
     ports:
       - "10.0.0.30:5081:8443"
     group_add:

@@ -10,11 +10,12 @@ public class UserCrudAccessConfiguration
         builder.ToTable("UserCrudAccess", tableBuilder => {
             tableBuilder.HasCheckConstraint(
                 "CK_UserCrudAccess_Resource",
-                "\"Resource\" IN ('Users', 'Hosts', 'Modules', 'ModuleTypes', 'AuditLogs')");
+                "\"Resource\" IN ('Users', 'Hosts', 'Modules', 'ModuleTypes', 'AuditLogs', 'MonitoringHistory')");
 
+            tableBuilder.HasCheckConstraint("CK_UserCrudAccess_Operations", "\"Resource\" = 'Modules' OR (NOT \"CanStart\" AND NOT \"CanStop\" AND NOT \"CanRestart\" AND NOT \"CanEnable\" AND NOT \"CanDisable\" AND NOT \"CanExecuteCommand\")");
             tableBuilder.HasCheckConstraint(
                 "CK_UserCrudAccess_ReadOnlyResources",
-                "\"Resource\" NOT IN ('ModuleTypes', 'AuditLogs') OR " +
+                "\"Resource\" NOT IN ('ModuleTypes', 'AuditLogs', 'MonitoringHistory') OR " +
                 "(NOT \"CanCreate\" AND NOT \"CanUpdate\" AND NOT \"CanDelete\")");
         });
 

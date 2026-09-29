@@ -51,14 +51,84 @@ never expose the backend listener. HTTPS remains the default.
 To rotate keys, add `Security__Tokens__1`, restart the agent, change its UI token,
 restart the UI, then remove the old token and restart the agent.
 
-## Updates
+## Docker controls
 
-After configuring matching authentication and transport on the UI and agent:
+Discovery and monitoring remain available to authenticated callers. Control is
+disabled until configured, separately per operation and exact container name/full ID:
+
+```yaml
+Controls__Docker__0__Target: my-game-server
+Controls__Docker__0__Operations__0: start
+Controls__Docker__0__Operations__1: stop
+Controls__Docker__0__Operations__2: restart
+```
+
+The agent resolves the container, verifies the allowlist, and sends the Engine API
+operation using its full ID. It never starts a shell for Docker controls. The Docker
+socket itself grants effective host-root authority to the process; application
+allowlists restrict remote API callers, not a compromised process with socket access.
+Mount it only on dedicated trusted agents. Do not expose Docker's TCP API.
+
+## systemd controls from Docker
+
+The agent runs only in Docker. No native agent service, host .NET runtime, sudo
+execution mode, or arbitrary command configuration is supported. It uses the
+mounted host D-Bus socket for monitoring and service controls. Retain the read-only
+D-Bus/systemd mounts in Compose; host policy decides which queries are permitted.
+
+Service controls are disabled until the exact service and each action are opted in:
+
+```yaml
+Controls__Systemd__0__Target: example.service
+Controls__Systemd__0__Operations__0: start
+Controls__Systemd__0__Operations__1: stop
+Controls__Systemd__0__Operations__2: restart
+Controls__Systemd__0__Operations__3: enable
+Controls__Systemd__0__Operations__4: disable
+```
+
+Omit unwanted actions. Discovery does not opt services into operations. These rules
+are checked again on every operation, even if the caller bypasses the UI.
+
+### One-time host authorization
+
+1. Install the host distribution's polkit package if it is not already installed.
+2. Create a dedicated non-login host account named `webboard-agent` whose numeric
+   UID matches the container user. The supplied .NET image defaults to UID 1654.
+   If that UID is already used, choose an unused UID and set `user: "UID:GID"` in
+   Compose to match the dedicated account. Retain Docker socket group access and
+   grant that UID read access to the TLS certificate.
+3. Install [50-webboard-agent.rules](host/50-webboard-agent.rules) as root at
+   `/etc/polkit-1/rules.d/50-webboard-agent.rules` (mode 0644). Replace the example
+   units/verbs with your services. This grants only those runtime controls.
+4. To support **Enable/Disable**, set `allowUnitFileChanges = true` in that host
+   rule and include the actions in the agent allowlist. This also authorizes
+   manager reload, required after unit-file changes.
+5. Restart the Docker agent after changing its allowlist. The host polkit service
+   normally reloads rule files automatically. Verify using a disposable service.
+
+This is a host configuration step, not a web UI authorization prompt. The agent
+never requests interactive authorization. Host refusal is returned as an operation
+failure; check the host policy and matching UID.
+
+systemd's unit-file authorization does not expose the target unit to polkit.
+Opting into unit-file changes therefore gives the agent identity broader host
+unit-file access (distribution policy may also imply runtime control and reload); the agent's `Controls:Systemd` list enforces the individual
+service/action restrictions for API callers. Keep this identity dedicated to the
+agent. No privileged container or writable host root mount is required.
+
+Enable/Disable call the host systemd manager through D-Bus and reload it afterward.
+Changes persist across reboot, do not force replacement of conflicting links, and
+do not start/stop the service. If reload fails after a change, the result explicitly
+reports that partial completion. Review service installation metadata: enabling a
+unit may also enable associated units. Unit files and executables must remain
+administrator-owned.
+
+## Updates
 
 ```sh
 docker compose pull agent
 docker compose up -d agent
-docker compose logs --tail=100 agent
 ```
 
-The agent does not need database migrations.
+The UI operation interface and consolidated permission are introduced separately.

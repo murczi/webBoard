@@ -20,7 +20,7 @@ public sealed class AgentSecurityTests {
     public void CredentialValidation(string header, bool expected) =>
         Assert.Equal(expected, new AgentSecurity(Config(new() { ["Security:Tokens:0"] = Token })).Authenticate(header));
     [Fact]
-    public async Task EndpointsRequireAuthentication() {
+    public async Task EndpointsRequireAuthenticationAndControlsRequireAllowlist() {
         await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Testing").ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["Security:Tokens:0"] = Token })));
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
@@ -28,6 +28,13 @@ public sealed class AgentSecurityTests {
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/docker/containers")).StatusCode);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
+        var denied = await client.PostAsJsonAsync("/operations", new OperationRequest(Guid.NewGuid(), 1, "Systemd", "never-execute.service", "restart"));
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/commands?moduleId=1")).StatusCode);
+        var command = await client.PostAsJsonAsync("/operations", new OperationRequest(Guid.NewGuid(), 1, "Command", "none", "execute"));
+        Assert.Equal(HttpStatusCode.BadRequest, command.StatusCode);
+        var extra = await client.PostAsJsonAsync("/operations", new { requestId = Guid.NewGuid(), moduleId = 1, kind = "Command", target = "none", operation = "execute", arguments = new[] { "injected" } });
+        Assert.Equal(HttpStatusCode.BadRequest, extra.StatusCode);
     }
     [Theory]
     [InlineData("127.0.0.1", false)] [InlineData("10.0.0.1", true)] [InlineData("169.254.169.254", false)]
@@ -35,6 +42,25 @@ public sealed class AgentSecurityTests {
     public void NetworkPolicyAppliesToResolvedAddresses(string ip, bool allowed) {
         var policy = new NetworkPolicy(Config(new() { ["Outbound:AllowedPrivateNetworks:0"] = "10.0.0.0/8" }));
         Assert.Equal(allowed, policy.IsAllowed(IPAddress.Parse(ip)));
+    }
+    [Fact]
+    public async Task ServiceOperationsSuppressOutputAndDuplicatesAreNotRedispatched() {
+        var configuration = Config(new() { ["Controls:Systemd:0:Target"] = "example.service", ["Controls:Systemd:0:Operations:0"] = "restart" });
+        using var docker = new DockerSocketClient(configuration);
+        var runner = new FakeRunner();
+        var operations = new AgentOperations(configuration, docker, runner);
+        var request = new OperationRequest(Guid.NewGuid(), 7, "Systemd", "example.service", "restart");
+        var result = await operations.ExecuteAsync(request, default);
+        Assert.Null(result.Output);
+        await operations.ExecuteAsync(request, default);
+        Assert.Equal(1, runner.Calls);
+        await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(request with { ModuleId = 8 }, default));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => operations.ExecuteAsync(request with { RequestId = Guid.NewGuid(), Target = "other.service" }, default));
+    }
+    [Fact]
+    public async Task ProcessTimeoutKillsOnlyTheControlledChild() {
+        var result = await new ProcessRunner().RunAsync("/usr/bin/sleep", ["10"], TimeSpan.FromMilliseconds(50), default);
+        Assert.False(result.Success); Assert.True(result.TimedOut);
     }
     [Fact]
     public async Task AgentCredentialsAreBoundToTheirProfileAndHttpRequiresExplicitOptIn() {
@@ -58,4 +84,10 @@ public sealed class AgentSecurityTests {
         }
     }
     internal static IConfiguration Config(Dictionary<string, string?> values) => new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+    private sealed class FakeRunner : IProcessRunner {
+        public int Calls; public IReadOnlyList<string> Arguments = [];
+        public Task<OperationResult> RunAsync(string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token) {
+            Calls++; Arguments = arguments; return Task.FromResult(new OperationResult(true, "Done", 0, "secret"));
+        }
+    }
 }

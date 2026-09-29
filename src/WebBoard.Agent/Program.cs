@@ -8,6 +8,8 @@ builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.U
 builder.Services.AddSingleton<AgentSecurity>();
 builder.Services.AddSingleton<DockerSocketClient>();
 builder.Services.AddSingleton<SystemdClient>();
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<AgentOperations>();
 
 var app = builder.Build();
 var security = app.Services.GetRequiredService<AgentSecurity>();
@@ -120,6 +122,28 @@ app.MapGet("/systemd/services/{serviceName}/status", async (
    .WithName("GetSystemdServiceStatus")
    .WithTags("systemd");
 
+app.MapGet("/capabilities", async (string kind, string target, AgentOperations operations, DockerSocketClient docker, CancellationToken token) => {
+    if (kind == "Docker") {
+        try {
+            var container = await docker.GetContainerStatusAsync(target, token);
+            return Results.Ok(container is null ? Array.Empty<string>() : new[] { "start", "stop", "restart" }
+                .Where(operation => operations.Allows("Docker", container.Id, operation) || operations.Allows("Docker", container.Name, operation)).ToArray());
+        }
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException) { return Results.StatusCode(503); }
+    }
+    return Results.Ok(kind == "Systemd" ? new[] { "start", "stop", "restart", "enable", "disable" }
+        .Where(operation => operations.Allows("Systemd", target, operation)).ToArray() : Array.Empty<string>());
+});
+app.MapPost("/operations", async (OperationRequest request, AgentOperations operations, IHostApplicationLifetime lifetime) => {
+    try {
+        return Results.Ok(await operations.ExecuteAsync(request, lifetime.ApplicationStopping));
+    }
+    catch (UnauthorizedAccessException) { return Results.StatusCode(403); }
+    catch (ArgumentException) { return Results.BadRequest(new { message = "Invalid operation or configuration." }); }
+    catch (InvalidOperationException) { return Results.Conflict(new { message = "Another operation is running." }); }
+    catch (OperationCanceledException) { return Results.Json(new OperationResult(false, "Operation timed out; verify target state before retrying.", TimedOut: true), statusCode: 504); }
+    catch (HttpRequestException) { return Results.Json(new OperationResult(false, "Docker communication failed; verify target state before retrying."), statusCode: 502); }
+});
 app.Run();
 
 public partial class Program;

@@ -28,12 +28,15 @@ public sealed class DockerSocketClient : IDisposable {
         client = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://docker"),
-            Timeout = TimeSpan.FromSeconds(5)
+            Timeout = Timeout.InfiniteTimeSpan
         };
     }
 
     public async Task<IReadOnlyList<DockerContainerDto>> GetContainersAsync(
         CancellationToken cancellationToken) {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        cancellationToken = timeout.Token;
         var containers = await client.GetFromJsonAsync<List<DockerContainerSummary>>(
             "/containers/json?all=true",
             cancellationToken) ?? [];
@@ -52,6 +55,9 @@ public sealed class DockerSocketClient : IDisposable {
     public async Task<DockerContainerStatusDto?> GetContainerStatusAsync(
         string containerId,
         CancellationToken cancellationToken) {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        cancellationToken = timeout.Token;
         using var response = await client.GetAsync(
             $"/containers/{Uri.EscapeDataString(containerId)}/json",
             cancellationToken);
@@ -80,6 +86,16 @@ public sealed class DockerSocketClient : IDisposable {
             healthStatus,
             isHealthy,
             message);
+    }
+
+    public async Task<OperationResult> ControlAsync(string containerId, string operation, CancellationToken cancellationToken) {
+        if (operation is not ("start" or "stop" or "restart")) throw new ArgumentException("Invalid operation.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        using var response = await client.PostAsync($"/containers/{Uri.EscapeDataString(containerId)}/{operation}?t=10", null, timeout.Token);
+        return new OperationResult(response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NotModified,
+            response.IsSuccessStatusCode ? "Container operation completed." : response.StatusCode == System.Net.HttpStatusCode.NotModified
+                ? "Container already has the requested state." : $"Docker rejected the operation (HTTP {(int)response.StatusCode}).");
     }
 
     public void Dispose() => client.Dispose();
