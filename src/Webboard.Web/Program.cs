@@ -33,6 +33,7 @@ if (args.Contains("--migrate")) {
 }
 
 // Add services to the container.
+Webboard.Web.Security.OutboundSecurityValidation.Validate(builder.Configuration);
 builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
     options.UseNpgsql(
     builder.Configuration.GetConnectionString("WebboardDatabase")
@@ -49,27 +50,20 @@ builder.Services.AddScoped<IHostManagementService, HostManagementService>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
 builder.Services.AddScoped<IModuleManagementService, ModuleManagementService>();
 builder.Services.AddScoped<JwtSessionService>();
-builder.Services
-    .AddHttpClient<IAgentHealthChecker, Webboard.Web.Services.AgentHealthChecker>(client =>
-        client.Timeout = TimeSpan.FromSeconds(5))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
-builder.Services
-    .AddHttpClient<IDockerAgentClient, Webboard.Web.Services.DockerAgentClient>(client =>
-        client.Timeout = TimeSpan.FromSeconds(5));
-builder.Services
-    .AddHttpClient<ISystemdAgentClient, Webboard.Web.Services.SystemdAgentClient>(client =>
-        client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddSingleton<Webboard.Web.Security.NetworkPolicy>();
+builder.Services.AddTransient<Webboard.Web.Security.AgentAuthenticationHandler>();
+builder.Services.AddHttpClient<IAgentHealthChecker, Webboard.Web.Services.AgentHealthChecker>(client => client.Timeout = TimeSpan.FromSeconds(5))
+    .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
+    .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
+builder.Services.AddHttpClient<IDockerAgentClient, Webboard.Web.Services.DockerAgentClient>(client => client.Timeout = TimeSpan.FromSeconds(5))
+    .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
+    .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
+builder.Services.AddHttpClient<ISystemdAgentClient, Webboard.Web.Services.SystemdAgentClient>(client => client.Timeout = TimeSpan.FromSeconds(5))
+    .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
+    .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
 builder.Services.AddSingleton<IMinecraftStatusClient, Webboard.Web.Services.MinecraftStatusClient>();
-builder.Services
-    .AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client =>
-        client.Timeout = TimeSpan.FromSeconds(5))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
+builder.Services.AddHttpClient<IModuleHealthChecker, Webboard.Web.Services.HttpModuleHealthChecker>(client => client.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
 
 var jwtOptions = builder.Configuration
     .GetSection(JwtOptions.SectionName)

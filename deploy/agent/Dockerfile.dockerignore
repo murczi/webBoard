@@ -5,3 +5,9 @@
 **/.env
 **/.env.*
 **/appsettings.Development.json
+**/tls/
+**/*.pfx
+**/*.key
+**/agent.env
+**/appsettings.Production.json
+**/http-client.private.env.json

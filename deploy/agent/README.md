@@ -1,100 +1,64 @@
-# WebBoard agent
+# webBoard agent security and deployment
 
-Run `shujidev/webboard-agent:latest` on each machine you want to monitor. It
-reports that machine's Docker containers and systemd services. It does not
-need PostgreSQL, a UI signing key, a repository clone, or `.env`.
+Deploy one agent per monitored machine, independently of the UI and PostgreSQL.
+All endpoints, including `/health`, discovery, and operations,
+require `Authorization: Bearer <token>`. Generate a different token for each agent
+with `openssl rand -hex 32`. Never place tokens in URLs, module properties, or
+browser JavaScript. The agent fails startup without a token of at least 32 bytes.
 
-[Deployment overview](../../README.md) · [UI setup](../ui/README.md)
+## Container deployment
 
-## Compose file
+Use [compose.yaml](compose.yaml). Supply `Security__Tokens__0`, a certificate and
+password, and a private bind address. The example serves HTTPS on container port
+8443 and host port 5081. Mount a PFX at `./tls/agent.pfx`; its SAN must match the DNS
+name used by the UI. Give the container's non-root UID read access to the certificate
+and socket group access using `stat -c '%g' /var/run/docker.sock`. Protect the
+Compose file and certificate password. No privileged container is required.
 
-On each Linux Docker host running systemd, create a directory and save this
-as `compose.yaml` (or download the [Compose file](compose.yaml)):
+Configure the UI with the same URL and token:
 
 ```yaml
-services:
-  agent:
-    image: shujidev/webboard-agent:latest
-    restart: unless-stopped
-    ports:
-      - "10.0.0.30:5080:8080"
-    group_add:
-      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
-    volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-        bind:
-          create_host_path: false
-      - type: bind
-        source: /run/dbus/system_bus_socket
-        target: /run/dbus/system_bus_socket
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: /run/systemd/system
-        target: /run/systemd/system
-        read_only: true
-        bind:
-          create_host_path: false
+Agents__0__BaseUrl: https://agent.example.com:5081
+Agents__0__Token: "REPLACE_WITH_RANDOM_AGENT_TOKEN"
+Outbound__AllowedPrivateNetworks__0: 10.0.0.0/24
 ```
 
-Replace the example `10.0.0.30` with this machine's private/VPN interface IP.
-Replace `999` in `group_add` with the output of:
+Add another numbered profile for each agent. Profiles may not overlap. Enter that
+exact base URL in Host management; the UI performs an authenticated health probe.
+A profile is mandatory even for the Test agent action. The browser never receives
+its token. Requests cannot follow redirects to another server.
+
+Use certificates issued by a CA trusted by the UI. For a private CA, extend the UI
+image with the CA certificate and `update-ca-certificates` as root, then return to
+`USER $APP_UID`. Never disable certificate validation. Containers on a shared
+network still require matching certificate names and an allowed private subnet.
+Docker service names do not resolve across independent machines; use DNS or VPN IPs.
+
+A health probe from an authorized machine is:
 
 ```sh
-stat -c '%g' /var/run/docker.sock
+curl --fail --header "Authorization: Bearer $WEBBOARD_AGENT_TOKEN" https://agent.example.com:5081/health
 ```
 
-The mounts access this machine's Docker and systemd, regardless of where the
-UI runs. On a host without systemd, remove the two `/run/…` mounts; systemd
-endpoints will then be unavailable. The image runs as a non-root user; host
-D-Bus policy determines which systemd queries it can perform.
+For an existing **encrypted VPN/tunnel**, HTTP is an explicit exception on both
+ends: set `Agents__0__AllowHttpOverEncryptedTransport=true` in the UI and
+`Security__AllowHttpOverEncryptedTransport=true` in the agent, change its
+`ASPNETCORE_URLS`, and bind only the tunnel/private interface. A private address or
+ordinary Docker network alone is not encrypted transport. A TLS proxy on the same
+host may terminate TLS and forward over loopback using this explicit exception;
+never expose the backend listener. HTTPS remains the default.
 
-## Start and connect
+To rotate keys, add `Security__Tokens__1`, restart the agent, change its UI token,
+restart the UI, then remove the old token and restart the agent.
 
-In the directory containing the Compose file:
+## Updates
+
+After configuring matching authentication and transport on the UI and agent:
 
 ```sh
 docker compose pull agent
 docker compose up -d agent
-docker compose logs -f agent
-curl http://10.0.0.30:5080/health
+docker compose logs --tail=100 agent
 ```
 
-Use your actual agent address in the health check. Add the same base URL
-(`http://10.0.0.30:5080` in this example) when configuring a host in the UI.
-The address must be reachable from the UI container. Each agent has its own
-machine address; `http://agent:8080` only works for the single-machine stack's
-shared Docker network.
-
-The agent currently has no built-in authentication. Keep this endpoint on a
-trusted private VPN/network restricted to the UI machine; never publish it
-to the internet. Docker socket access gives effective root-level host control.
-Use loopback binding (`127.0.0.1:5080:8080`) if accessing it through a tunnel
-on the agent machine instead. These read-only discovery operations do not
-require a privileged container.
-
-## Upgrade
-
-On each agent machine:
-
-```sh
-docker compose pull agent
-docker compose up -d agent
-```
-
-Use `latest` for the current published image, or replace it with a numbered
-tag such as `1.2` to choose a specific build. Agent updates do not run database
-migrations or restart the UI.
-
-## Endpoints
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Agent health. |
-| `GET` | `/docker/containers` | Docker container discovery. |
-| `GET` | `/docker/containers/{id}/status` | Container state and health. |
-| `GET` | `/systemd/services` | Systemd service discovery. |
-| `GET` | `/systemd/services/{name}/status` | Systemd service state. |
+The agent does not need database migrations.

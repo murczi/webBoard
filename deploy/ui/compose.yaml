@@ -7,5 +7,9 @@ services:
       # Replace with the database machine's private DNS name/IP and credentials.
       ConnectionStrings__WebboardDatabase: 'Host=db.internal;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
       Authentication__Jwt__SigningKey: "" # Paste output of openssl rand -hex 32
+      # Optional agent profile. Remove these keys when deploying without agents.
+      Agents__0__BaseUrl: https://agent.example.com:5081
+      Agents__0__Token: "" # Match the remote agent's Security__Tokens__0
+      Outbound__AllowedPrivateNetworks__0: 10.0.0.0/24 # Replace with your actual monitored subnet
     ports:
       - "127.0.0.1:8080:8080"

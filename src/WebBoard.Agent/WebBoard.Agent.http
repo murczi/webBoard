@@ -1,6 +1,7 @@
-@WebBoard.Agent_HostAddress = http://localhost:5080
-
+@WebBoard.Agent_HostAddress = https://localhost:5081
+# Set AgentToken in your private HTTP client environment, never in this file.
 GET {{WebBoard.Agent_HostAddress}}/health
+Authorization: Bearer {{AgentToken}}
 Accept: application/json
 
 ###

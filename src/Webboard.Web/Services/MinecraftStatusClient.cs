@@ -9,6 +9,8 @@ using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 
 public sealed class MinecraftStatusClient : IMinecraftStatusClient {
+    private readonly Security.NetworkPolicy network;
+    public MinecraftStatusClient(Security.NetworkPolicy network) => this.network = network;
     private const int MaximumPacketLength = 1024 * 1024;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -27,18 +29,19 @@ public sealed class MinecraftStatusClient : IMinecraftStatusClient {
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Minecraft check timed out");
         }
-        catch (Exception exception) when (exception is SocketException or IOException or JsonException) {
+        catch (Exception exception) when (exception is SocketException or IOException or JsonException or HttpRequestException) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Minecraft server is unavailable");
         }
     }
 
-    private static async Task<ModuleHealthResult> GetStatusAsync(
+    private async Task<ModuleHealthResult> GetStatusAsync(
         string address,
         int port,
         CancellationToken cancellationToken) {
         using var client = new TcpClient();
         var stopwatch = Stopwatch.StartNew();
-        await client.ConnectAsync(address, port, cancellationToken);
+        var addresses = await network.ResolveAsync(address, cancellationToken);
+        await client.ConnectAsync(addresses, port, cancellationToken);
         await using var stream = client.GetStream();
 
         await WriteHandshakeAsync(stream, address, port, cancellationToken);

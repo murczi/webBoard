@@ -4,10 +4,24 @@ using WebBoard.Agent;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow);
+builder.Services.AddSingleton<AgentSecurity>();
 builder.Services.AddSingleton<DockerSocketClient>();
 builder.Services.AddSingleton<SystemdClient>();
 
 var app = builder.Build();
+var security = app.Services.GetRequiredService<AgentSecurity>();
+app.Use(async (context, next) => {
+    if (!security.Authenticate(context.Request.Headers.Authorization.ToString())) {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+    if (!context.Request.IsHttps && !builder.Configuration.GetValue<bool>("Security:AllowHttpOverEncryptedTransport")) {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+    await next(context);
+});
 
 if (app.Environment.IsDevelopment())
 {
@@ -107,3 +121,5 @@ app.MapGet("/systemd/services/{serviceName}/status", async (
    .WithTags("systemd");
 
 app.Run();
+
+public partial class Program;

@@ -62,13 +62,13 @@ by that proxy. Do not use the proxy container's `localhost` to reach the UI.
 
 Register your administrator account first: on an empty database, the first
 registration receives all supported CRUD permissions. Later accounts start
-without access. Use **Users → Set CRUD access** to grant permissions;
+without access. Use **Users → Set Permissions** to grant permissions;
 `Users:update` allows managing anyone's permissions. Write access automatically
 includes read access. Existing accounts retain their stored grants on upgrade;
 first-user bootstrap only runs when the `Users` table is empty.
 
 Add each monitored machine in the UI with its reachable agent URL, for example
-`http://10.0.0.30:5080` over a private VPN. Docker service names such as `agent`
+`https://agent.example.com:5081` with a matching authenticated agent profile. Docker service names such as `agent`
 only work on the same Docker network; they do not resolve across machines.
 
 ## Upgrade
@@ -87,3 +87,10 @@ docker compose up -d ui
 For controlled upgrades, replace `latest` with a numbered tag such as `1.2`
 and use the same commands. Database changes may prevent rolling back an older
 image without restoring a compatible database backup.
+
+## Authenticated agents and outbound connections
+
+Configure `Agents__0__BaseUrl`, `Agents__0__Token`, and
+`Outbound__AllowedPrivateNetworks__0` for each private agent. Use trusted HTTPS
+certificates. See the [agent security guide](../agent/README.md) for TLS setup,
+key rotation, and the explicit encrypted-tunnel HTTP exception.

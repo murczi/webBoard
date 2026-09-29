@@ -25,7 +25,7 @@ Use private DNS names or VPN IP addresses between machines. Docker Compose
 service names only resolve within their own Docker network, and `localhost`
 inside a container refers to that container. The agent needs no database
 credentials or UI signing key. Users access the UI through HTTPS; the UI
-connects to PostgreSQL and agent HTTP APIs over the private network.
+connects to PostgreSQL and authenticated agent HTTPS APIs over the private network.
 
 Each guide contains a standalone Compose example and start/update commands.
 For just the UI and database, follow those two guides; no agent configuration
@@ -70,6 +70,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
       Authentication__Jwt__SigningKey: "" # Required: paste output of openssl rand -hex 32
+      Agents__0__BaseUrl: https://agent:8443 # Certificate must include agent in its SANs
+      Agents__0__Token: "" # Match Security__Tokens__0 on the agent
+      Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -79,11 +82,22 @@ services:
   agent:
     image: shujidev/webboard-agent:latest
     restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: https://+:8443
+      Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
+      Kestrel__Certificates__Default__Path: /tls/agent.pfx
+      Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
     ports:
-      - "127.0.0.1:5080:8080"
+      - "127.0.0.1:5081:8443"
     group_add:
       - "999" # Replace with: stat -c '%g' /var/run/docker.sock
     volumes:
+      - type: bind
+        source: ./tls/agent.pfx
+        target: /tls/agent.pfx
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: /var/run/docker.sock
         target: /var/run/docker.sock
@@ -127,9 +141,10 @@ The schema command exits after applying migrations; only start the UI if it
 succeeds. Run it once per database. No SDK or repository is required.
 
 The UI's local HTTP endpoint is `http://localhost:8080`; configure an HTTPS
-reverse proxy for browser access and Secure login cookies. In this shared
-network, add the local agent in the UI as `http://agent:8080`. Agent health is
-also available at `http://localhost:5080/health` on the host.
+reverse proxy for browser access and Secure login cookies. Configure a certificate valid for the agent DNS name, its random token, and the
+UI connection profile before starting agents. Add `https://agent:8443` in the
+single-machine UI; install the issuing CA in the UI trust store when using private TLS.
+See the agent security guide for certificate mounts and authenticated health probes.
 
 ## Updates
 

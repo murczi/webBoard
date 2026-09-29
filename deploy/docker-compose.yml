@@ -30,6 +30,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
       Authentication__Jwt__SigningKey: "" # Required: paste output of openssl rand -hex 32
+      Agents__0__BaseUrl: https://agent:8443 # Certificate must include agent in its SANs
+      Agents__0__Token: "" # Match Security__Tokens__0 on the agent
+      Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -39,11 +42,22 @@ services:
   agent:
     image: shujidev/webboard-agent:latest
     restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: https://+:8443
+      Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
+      Kestrel__Certificates__Default__Path: /tls/agent.pfx
+      Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
     ports:
-      - "127.0.0.1:5080:8080"
+      - "127.0.0.1:5081:8443"
     group_add:
       - "999" # Replace with: stat -c '%g' /var/run/docker.sock
     volumes:
+      - type: bind
+        source: ./tls/agent.pfx
+        target: /tls/agent.pfx
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: /var/run/docker.sock
         target: /var/run/docker.sock

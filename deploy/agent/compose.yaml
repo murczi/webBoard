@@ -2,11 +2,22 @@ services:
   agent:
     image: shujidev/webboard-agent:latest
     restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: https://+:8443
+      Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
+      Kestrel__Certificates__Default__Path: /tls/agent.pfx
+      Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
     ports:
-      - "10.0.0.30:5080:8080"
+      - "10.0.0.30:5081:8443"
     group_add:
       - "999" # Replace with: stat -c '%g' /var/run/docker.sock
     volumes:
+      - type: bind
+        source: ./tls/agent.pfx
+        target: /tls/agent.pfx
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: /var/run/docker.sock
         target: /var/run/docker.sock
