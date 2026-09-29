@@ -19,10 +19,11 @@ public sealed class HttpModuleHealthChecker(
                     ModuleHealthState.NotConfigured,
                     null,
                     "Docker host or container is not configured");
-            return await dockerAgent.CheckContainerAsync(
+            var result = await dockerAgent.CheckContainerAsync(
                 module.HostAgentBaseUrl,
                 module.ContainerId,
                 cancellationToken);
+            return AgentHealthFeedback.WithHost(result, module.HostName);
         }
 
         if (string.Equals(module.TypeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
@@ -32,10 +33,11 @@ public sealed class HttpModuleHealthChecker(
                     ModuleHealthState.NotConfigured,
                     null,
                     "systemd host or service is not configured");
-            return await systemdAgent.CheckServiceAsync(
+            var result = await systemdAgent.CheckServiceAsync(
                 module.HostAgentBaseUrl,
                 module.ServiceName,
                 cancellationToken);
+            return AgentHealthFeedback.WithHost(result, module.HostName);
         }
 
         if (string.Equals(module.TypeName, "Minecraft", StringComparison.OrdinalIgnoreCase)) {
@@ -82,7 +84,7 @@ public sealed class HttpModuleHealthChecker(
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Health check timed out");
         }
         catch (HttpRequestException) {
-            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Health check failed");
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Cannot reach the health-check endpoint");
         }
     }
 }

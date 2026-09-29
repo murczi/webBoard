@@ -65,4 +65,6 @@ a { text-underline-offset:3px; }
 .arrangement-tile.drop-after::after { right:-.75rem; }
 .arrangement-drag-preview { position:fixed; z-index:1100; pointer-events:none; padding:.65rem 1rem; max-width:220px; overflow-wrap:anywhere; border-radius:.5rem; border:1px solid var(--workspace-accent); background:var(--workspace-panel); color:var(--bs-body-color); box-shadow:0 8px 24px #0003; }
 .is-arranging { user-select:none; }
+.module-health-feedback { white-space:normal; align-items:flex-start; overflow-wrap:anywhere; }
+.module-health-feedback .module-health-dot { flex-shrink:0; margin-top:.35rem; }
 @media(max-width:575px) { .arrangement-toolbar { align-items:flex-start; flex-direction:column; } }

@@ -2,6 +2,7 @@ namespace Webboard.Web.Services;
 
 using System.Diagnostics;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 
@@ -31,8 +32,10 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         }
 
         var stopwatch = Stopwatch.StartNew();
+        var receivedResponse = false;
         try {
             using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+            receivedResponse = true;
             stopwatch.Stop();
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return new ModuleHealthResult(
@@ -43,22 +46,25 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
                 return new ModuleHealthResult(
                     ModuleHealthState.Unhealthy,
                     stopwatch.ElapsedMilliseconds,
-                    $"Agent returned HTTP {(int)response.StatusCode}");
+                    AgentHealthFeedback.ResponseFailure(response.StatusCode, "Docker"));
 
             var status = await response.Content.ReadFromJsonAsync<DockerContainerStatus>(
                 cancellationToken: cancellationToken);
-            if (status is null)
+            if (status is null || status.IsHealthy is null || string.IsNullOrWhiteSpace(status.Message))
                 return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
             return new ModuleHealthResult(
-                status.IsHealthy ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
+                status.IsHealthy == true ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
                 stopwatch.ElapsedMilliseconds,
                 status.Message);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Docker check timed out");
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Host agent request timed out");
         }
         catch (HttpRequestException) {
-            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Docker agent could not be reached");
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, receivedResponse ? "Could not read the agent response" : "Cannot reach the host agent");
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException) {
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
         }
     }
 
@@ -69,5 +75,5 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         return new Uri(baseUri, relativePath);
     }
 
-    private sealed record DockerContainerStatus(bool IsHealthy, string Message);
+    private sealed record DockerContainerStatus(bool? IsHealthy, string? Message);
 }

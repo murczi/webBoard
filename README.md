@@ -282,6 +282,12 @@ are retained when they become visible again; newly encountered modules are appen
 in alphabetical order. Hosts and Users do not support rearrangement. Personal
 module ordering requires no database migration.
 
+The viewing dashboard displays health failure messages directly, with response
+time shown separately. Feedback distinguishes a missing container or service,
+an unreachable or timed-out host agent, unavailable Docker/systemd, and invalid
+agent responses. A failed agent connection does not establish that the entire
+host is offline. Open links remain available on the viewing dashboard.
+
 The theme selector supports **System**, **Light**, and **Dark**, saved in this
 browser. System follows the device preference.
 

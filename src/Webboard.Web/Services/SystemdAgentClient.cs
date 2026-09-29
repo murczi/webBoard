@@ -43,30 +43,35 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent URL");
         }
 
+        var receivedResponse = false;
         try {
             using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+            receivedResponse = true;
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return new ModuleHealthResult(
                     ModuleHealthState.Unhealthy, null, "systemd service was not found");
             if (!response.IsSuccessStatusCode)
                 return new ModuleHealthResult(
                     ModuleHealthState.Unhealthy, null,
-                    $"Agent returned HTTP {(int)response.StatusCode}");
+                    AgentHealthFeedback.ResponseFailure(response.StatusCode, "systemd"));
 
             var status = await response.Content.ReadFromJsonAsync<SystemdServiceStatus>(
                 cancellationToken: cancellationToken);
-            return status is null
+            return status is null || status.IsHealthy is null || string.IsNullOrWhiteSpace(status.Message)
                 ? new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response")
                 : new ModuleHealthResult(
-                    status.IsHealthy ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
+                    status.IsHealthy == true ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
                     null,
                     status.Message);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "systemd check timed out");
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Host agent request timed out");
         }
         catch (HttpRequestException) {
-            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "systemd agent could not be reached");
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, receivedResponse ? "Could not read the agent response" : "Cannot reach the host agent");
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException) {
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
         }
     }
 
@@ -77,6 +82,6 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
         return new Uri(baseUri, relativePath);
     }
 
-    private sealed record SystemdServiceStatus(bool IsHealthy, string Message);
+    private sealed record SystemdServiceStatus(bool? IsHealthy, string? Message);
     private sealed record AgentProblem(string? Detail);
 }

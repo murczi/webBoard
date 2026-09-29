@@ -63,27 +63,13 @@ else {
             <article class="card border-0 shadow-sm module-tile" data-module-id="@tile.Module.Id">
                 <div class="card-body d-flex flex-column">
                     <h2 class="h5 mb-2 text-break">@tile.Module.Name</h2>
-                    <div class="module-health flex-shrink-0" title="@tile.Health.Message">
-                            <span class="module-health-dot @dotClass" aria-hidden="true"></span>
-                            <span class="small fw-semibold">
-                                @if (string.Equals(tile.Module.TypeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
-                                    @tile.Health.Message
-                                }
-                                else if (string.Equals(tile.Module.TypeName, "Minecraft", StringComparison.OrdinalIgnoreCase) &&
-                                         tile.Health.PingMilliseconds.HasValue) {
-                                    @($"{tile.Health.PingMilliseconds} ms · {tile.Health.Message}")
-                                }
-                                else if (tile.Health.PingMilliseconds.HasValue) {
-                                    @($"{tile.Health.PingMilliseconds} ms")
-                                }
-                                else if (tile.Health.State == ModuleHealthState.NotConfigured) {
-                                    @:Not monitored
-                                }
-                                else {
-                                    @:Unavailable
-                                }
-                            </span>
-                        </div>
+                    <div class="module-health module-health-feedback mb-2">
+                        <span class="module-health-dot @dotClass" aria-hidden="true"></span>
+                        <span class="small fw-semibold">@tile.Health.Message</span>
+                    </div>
+                    @if (tile.Health.PingMilliseconds.HasValue) {
+                        <span class="small text-muted mb-2">Response time: @tile.Health.PingMilliseconds ms</span>
+                    }
 
                     <p class="text-muted module-description @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "fst-italic" : "")">
                         @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "No description" : tile.Module.Description)
