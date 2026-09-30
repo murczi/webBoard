@@ -66,7 +66,8 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
                 Id = access.Id,
                 UserId = access.UserId,
                 Resource = access.Resource,
-                CanCreate = access.CanCreate,
+                CanOperate = access.CanOperate,
+        CanCreate = access.CanCreate,
                 CanRead = access.CanRead,
                 CanUpdate = access.CanUpdate,
                 CanDelete = access.CanDelete
@@ -103,6 +104,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
         Id = access.Id,
         UserId = access.UserId,
         Resource = access.Resource,
+        CanOperate = access.CanOperate,
         CanCreate = access.CanCreate,
         CanRead = access.CanRead,
         CanUpdate = access.CanUpdate,

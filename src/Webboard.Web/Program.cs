@@ -56,6 +56,10 @@ builder.Services.AddScoped<IHostManagementService, HostManagementService>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
 builder.Services.AddScoped<IModuleManagementService, ModuleManagementService>();
 builder.Services.AddScoped<JwtSessionService>();
+builder.Services.AddScoped<IModuleOperations, ModuleOperations>();
+builder.Services.AddHttpClient<IAgentOperationsClient, Webboard.Web.Services.AgentOperationsClient>(client => client.Timeout = TimeSpan.FromSeconds(310))
+    .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
+    .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
 builder.Services.AddSingleton<Webboard.Web.Security.NetworkPolicy>();
 builder.Services.AddTransient<Webboard.Web.Security.AgentAuthenticationHandler>();
 builder.Services.AddHttpClient<IAgentHealthChecker, Webboard.Web.Services.AgentHealthChecker>(client => client.Timeout = TimeSpan.FromSeconds(5))

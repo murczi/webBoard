@@ -1,6 +1,7 @@
 namespace Webboard.Web.Authentication;
 
 public static class ModuleAccess {
+    public const string Operations = "Modules:operations";
     public const string Read = "Modules:read";
     public const string Create = "Modules:create";
     public const string Update = "Modules:update";

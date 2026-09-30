@@ -93,6 +93,8 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
                 item.CanDelete = false;
             }
 
+            if (resource.Key != "Modules") item.CanOperate = false;
+            item.CanRead |= item.CanOperate;
             item.CanRead |= item.CanCreate || item.CanUpdate || item.CanDelete;
 
             if (existing.TryGetValue(resource.Key, out var current)) {

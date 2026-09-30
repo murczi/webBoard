@@ -124,11 +124,42 @@ reports that partial completion. Review service installation metadata: enabling 
 unit may also enable associated units. Unit files and executables must remain
 administrator-owned.
 
-## Updates
+## UI access and buttons
 
-```sh
-docker compose pull agent
-docker compose up -d agent
-```
+User management exposes one extra permission: **Modules → Operations**. Granting
+it also grants Read. It permits only actions allowed by the agent; module Update
+access does not grant control access. All users, including the initial administrator,
+start with Operations off. Administrators must grant it explicitly.
 
-The UI operation interface and consolidated permission are introduced separately.
+The Operations page offers **Up / Down / Restart** for Docker (start/stop/restart
+the existing container) and **Start / Stop / Restart / Enable / Disable** for
+systemd. Buttons appear only for opted-in actions. There are no Compose stack
+creation/removal actions, command text boxes, command associations, or custom
+executables. Confirmations identify the module and host before submission.
+
+Operations serialize per agent; conflicts return 409. The UI persists an audit
+attempt and unique request ID before dispatch, and does not automatically retry.
+A lost connection, agent/UI crash, or timeout can leave an unknown/pending result:
+verify the target manually before issuing a new operation. Docker/systemd jobs can
+continue after the client times out. Duplicate IDs are never redispatched by the
+UI; the agent also caches recent completed IDs in memory, which resets on restart.
+
+## API and upgrades
+
+- `GET /health`, `/docker/containers`, `/docker/containers/{id}/status`
+- `GET /systemd/services`, `/systemd/services/{name}/status`
+- `GET /capabilities?kind=Systemd&target=example.service` returns allowlisted verbs.
+- `POST /operations` accepts requestId, moduleId, kind (Docker/Systemd),
+  target, and operation. Unknown JSON properties are rejected.
+
+Update containers using `docker compose pull agent` and `docker compose up -d agent`.
+Agent upgrades never run UI database migrations. On migration from the old unauthenticated agent, configure
+security on both ends together; there is no anonymous compatibility mode.
+
+Upgrade the UI and agent together with UI replicas stopped. Apply the
+`RestrictModuleOperations` migration before starting the new UI; it deletes obsolete
+command associations and individual action grants and sets Operations to off for
+all existing accounts. Historical audit records are retained. Reassign Operations
+in User management and refresh the affected sessions. Remove old `Commands` and
+`Systemd:UseSudo` configuration. Rolling back the schema cannot recover deleted
+command associations or previous permission grants.

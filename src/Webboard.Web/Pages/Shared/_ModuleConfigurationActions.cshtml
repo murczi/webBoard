@@ -5,6 +5,9 @@
     var canReadLogs = AuditLogAccess.HasRead(User);
 }
 <div class="configuration-actions d-flex justify-content-between gap-2 mt-3 pt-3">
+    @if (Model.IsEnabled && Model.TypeName is "Docker" or "Systemd" && ModuleAccess.Has(User, ModuleAccess.Read) && ModuleAccess.Has(User, ModuleAccess.Operations)) {
+        <a class="btn btn-sm btn-outline-secondary" asp-page="/Operations" asp-route-moduleId="@Model.Id">Operations</a>
+    }
     @if (canUpdate) {
         <button type="button" class="btn btn-sm btn-outline-primary js-edit-module"
                 data-bs-toggle="modal" data-bs-target="#module-modal"

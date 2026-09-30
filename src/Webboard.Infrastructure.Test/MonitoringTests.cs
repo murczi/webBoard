@@ -83,6 +83,37 @@ public sealed class MonitoringTests : IAsyncLifetime {
         var block = await reader.BlockAsync(moduleId, start.AddSeconds(150), default); Assert.Equal(ModuleHealthState.Unknown, block.State);
     }
     [PostgresFact]
+    public async Task OperationsRequireCurrentGrantAndPersistAuditWithoutDuplicateDispatch() {
+        await using var db = Context(); var agent = new FakeAgent(); var operations = new ModuleOperations(db, agent);
+        var request = new ModuleOperationRequest(Guid.NewGuid(), moduleId, "restart");
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => operations.ExecuteAsync(actorId, request, default));
+        await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
+        var result = await operations.ExecuteAsync(actorId, request, default); Assert.True(result.Success);
+        await operations.ExecuteAsync(actorId, request, default); Assert.Equal(1, agent.Calls);
+        var audit = await db.AuditLogs.SingleAsync(x => x.OperationId == request.RequestId);
+        Assert.Equal(hostId, audit.HostId); Assert.Equal("Succeeded", audit.Outcome); Assert.Equal(actorId, audit.ActorId);
+        await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, false));
+        db.ChangeTracker.Clear();
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => operations.ExecuteAsync(actorId, request with { RequestId = Guid.NewGuid() }, default));
+        Assert.Equal(1, agent.Calls);
+    }
+    [PostgresFact]
+    public async Task OnlyEnabledDockerAndSystemdModulesAcceptSupportedOperations() {
+        await using var db = Context();
+        var agent = new FakeAgent(); var operations = new ModuleOperations(db, agent);
+        await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
+        foreach (var action in new[] { "execute", "enable", "disable", "up", "down", "anything" })
+            await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(actorId, new(Guid.NewGuid(), moduleId, action), default));
+        await db.Modules.Where(x => x.Id == moduleId).ExecuteUpdateAsync(s => s.SetProperty(x => x.TypeId, 1));
+        db.ChangeTracker.Clear();
+        await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(actorId, new(Guid.NewGuid(), moduleId, "restart"), default));
+        await db.Modules.Where(x => x.Id == moduleId).ExecuteUpdateAsync(s => s.SetProperty(x => x.TypeId, 2).SetProperty(x => x.IsEnabled, false));
+        db.ChangeTracker.Clear();
+        await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(actorId, new(Guid.NewGuid(), moduleId, "restart"), default));
+        Assert.Equal(0, agent.Calls);
+        Assert.False(await db.AuditLogs.AnyAsync(x => x.OperationId != null));
+    }
+    [PostgresFact]
     public async Task ConfigurationEditInvalidatesLatestAndCutsHistory() {
         await using var db = Context();
         await new MonitoringCollector(db, new FakeChecker(), options).CollectAsync(moduleId, default);

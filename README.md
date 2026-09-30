@@ -73,6 +73,8 @@ services:
       Agents__0__BaseUrl: https://agent:8443 # Certificate must include agent in its SANs
       Agents__0__Token: "" # Match Security__Tokens__0 on the agent
       Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
+      Monitoring__IntervalSeconds: 30
+      Monitoring__RetentionDays: 30
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -317,15 +319,23 @@ Older events appear as **Legacy**; new events record explicit Create, Update,
 Delete, or Permissions changed actions. Existing comments are not interpreted
 to guess historical actions.
 
-## Agent operations and audit foundation
 
-Authenticated agents expose allowlisted Docker and systemd controls. See the
-[agent guide](deploy/agent/README.md) for permitted actions and host authorization.
-`AddModuleOperationsAndPermissions` prepares operation audit records and permission
-storage. Apply migrations with all UI replicas stopped. The UI operation interface
-and consolidated permission follow in a separate change.
+## Monitoring and operations
 
-## Steam server monitoring
+See [security and Docker-agent controls](deploy/agent/README.md)
+and [monitoring configuration](deploy/ui/README.md#background-monitoring-and-history).
+Agents now require authentication and secured transport. Existing installations must
+configure matching UI/agent tokens and TLS before upgrading. Private monitoring
+networks must be explicitly listed in `Outbound:AllowedPrivateNetworks`.
+
+The new migrations are `AddModuleOperationsAndPermissions`, `AddSteamModules`, and
+`AddMonitoringHistory`, followed by `RestrictModuleOperations`. Use the existing `--migrate` procedure with all UI replicas
+stopped. Existing module readers receive history access; refresh access after the
+upgrade. The new Operations permission defaults to off for all accounts.
+Permission administrators grant **Modules → Operations** in User management; the
+agent allowlist restricts permitted containers/services and actions. Custom command
+execution is removed. Deploy the agent only through Docker; systemd enable/disable
+requires the documented one-time host polkit setup.
 
 Steam modules query the explicit UDP query port (often 27015; game port can differ).
 They display server name, game, map, population, latency, and availability. Optional
@@ -334,8 +344,6 @@ supports Source A2S_INFO with challenges and split/BZip2 responses. Legacy GoldS
 info packets and unusual pre-Orange-Box split layouts are reported as incompatible;
 other modules continue monitoring normally. BZip2 decoding uses
 [SharpZipLib](https://github.com/icsharpcode/SharpZipLib).
-
-## Background monitoring and history
 
 Monitoring results are separate from configuration/execution audit events. The
 dashboard and history page poll persisted results while visible, without launching

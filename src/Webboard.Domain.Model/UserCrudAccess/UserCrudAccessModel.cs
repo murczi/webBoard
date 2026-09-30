@@ -7,6 +7,7 @@ public class UserCrudAccessModel {
 
     public required string Resource { get; set; }
 
+    public bool CanOperate { get; set; }
 
     public bool CanCreate { get; set; }
 

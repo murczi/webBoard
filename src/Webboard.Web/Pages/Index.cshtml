@@ -83,6 +83,9 @@ else {
                             }
                         </div>
                         <div class="d-flex align-items-center gap-2">
+                            @if (tile.Module.IsEnabled && tile.Module.TypeName is "Docker" or "Systemd" && User.HasClaim("access", "Modules:read") && User.HasClaim("access", "Modules:operations")) {
+                                <a class="btn btn-sm btn-outline-secondary" asp-page="/Operations" asp-route-moduleId="@tile.Module.Id">Operations</a>
+                            }
                             @if (Model.CanReadLogs) {
                                 <a class="btn btn-sm btn-outline-secondary" asp-page="/AuditLogs" asp-route-Resource="Modules" asp-route-TargetId="@tile.Module.Id">History</a>
                             }

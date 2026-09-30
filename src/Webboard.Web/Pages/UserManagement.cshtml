@@ -71,7 +71,7 @@
                                                     data-user-id="@user.Id"
                                                     data-user-name="@user.Name"
                                                     data-access-url="@Url.Page("/UserManagement", "Access", new { userId = user.Id })">
-                                                Set CRUD access
+                                                Set Permissions
                                             </button>
                                         </li>
                                     }
@@ -119,7 +119,7 @@
             <form method="post" asp-page-handler="SaveAccess" id="access-form">
                 <div class="modal-header">
                     <div>
-                        <h2 class="modal-title fs-5" id="access-modal-title">CRUD access</h2>
+                        <h2 class="modal-title fs-5" id="access-modal-title">Permissions</h2>
                         <p class="text-muted small mb-0" id="access-modal-user"></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -143,13 +143,14 @@
                                 <th scope="col" class="text-center">Read</th>
                                 <th scope="col" class="text-center">Update</th>
                                 <th scope="col" class="text-center">Delete</th>
+                                <th scope="col" class="text-center">Operations</th>
                             </tr>
                             </thead>
                             <tbody id="access-rows"></tbody>
                         </table>
                     </div>
                     <p class="small text-muted mt-3 mb-0 d-none" id="access-note">
-                        Create, update, or delete access automatically includes read access. Module types and audit logs are read-only resources.
+                        Create, update, delete, or operations access automatically includes read access. Module types, audit logs, and monitoring history are read-only resources.
                     </p>
                     <div class="mt-4">
                         <label for="access-audit-comment" class="form-label">Audit comment</label>
@@ -238,6 +239,7 @@
                     addAccessCheckbox(row, index, 'CanRead', item.canRead, false);
                     addAccessCheckbox(row, index, 'CanUpdate', item.canUpdate, item.isReadOnlyResource);
                     addAccessCheckbox(row, index, 'CanDelete', item.canDelete, item.isReadOnlyResource);
+                    addAccessCheckbox(row, index, 'CanOperate', item.canOperate, item.resource !== 'Modules');
                     const read = row.querySelector(`[name="Access[${index}].CanRead"]`);
                     const writes = [...row.querySelectorAll('input[type="checkbox"]')].filter(input => input !== read);
                     const ensureRead = () => {

@@ -35,6 +35,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
                 Id = access.Id,
                 UserId = access.UserId,
                 Resource = access.Resource,
+                CanOperate = access.CanOperate,
                 CanCreate = access.CanCreate,
                 CanRead = access.CanRead,
                 CanUpdate = access.CanUpdate,
@@ -79,6 +80,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
                 {
                     Resource = resource,
                     CanRead = true,
+                    CanOperate = false,
                     CanCreate = !readOnly,
                     CanUpdate = !readOnly,
                     CanDelete = !readOnly,

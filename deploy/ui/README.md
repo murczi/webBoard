@@ -73,15 +73,44 @@ only work on the same Docker network; they do not resolve across machines.
 
 ## Upgrade
 
-Back up the database and stop all UI replicas before a schema upgrade. Run
-these commands on the UI machine (migrations only once per database):
+Wait for the **Publish Docker images** workflow on `main` to succeed before
+pulling. Back up the database. Preserve the database credentials and JWT signing
+key, and configure matching UI/agent tokens, trusted TLS certificates, and the
+allowed private monitoring networks before restarting either component.
+
+On the UI machine, in the directory containing its configured Compose file:
 
 ```sh
 docker compose pull ui
 docker compose stop ui
-docker compose run --rm --no-deps ui --migrate
-docker compose up -d ui
 ```
+
+Stop every UI replica. On each agent machine, in its own Compose directory:
+
+```sh
+docker compose pull agent
+docker compose up -d agent
+docker compose logs --tail=100 agent
+```
+
+Verify the authenticated `/health` probe described in the
+[agent guide](../agent/README.md). Then, back in the UI Compose directory, run
+migrations once per database:
+
+```sh
+docker compose run --rm --no-deps ui --migrate
+```
+
+Only after migration succeeds, start the UI replicas:
+
+```sh
+docker compose up -d ui
+docker compose logs --tail=100 ui
+```
+
+After this upgrade, grant **Modules → Operations** to the intended users and
+refresh their sessions. For systemd controls, also complete the agent guide's
+one-time host account and polkit setup, and configure the agent action allowlist.
 
 `latest` follows new published builds; pulling it does not restart containers.
 For controlled upgrades, replace `latest` with a numbered tag such as `1.2`
@@ -145,5 +174,16 @@ ranges are limited to ten years, with periods outside retention shown as Unknown
 History visibility changes do not change monitoring configuration.
 
 Existing module readers receive `MonitoringHistory:read` during migration. Users
-must Refresh access or sign in again to load that grant. Stop all UI replicas and
-run `--migrate` once before restarting them.
+must Refresh access or sign in again to load that grant. Grant **Modules → Operations** explicitly in User management; it defaults to off
+for all accounts. The agent allowlist determines which Docker/systemd actions are
+available. Module CRUD permissions do not imply operation permissions, and arbitrary
+command execution is not supported. Current database grants are
+checked on each operation, so revocation applies without waiting for JWT expiry.
+
+Upgrade with all UI replicas stopped and run `--migrate` once, as above. This release
+adds `AddModuleOperationsAndPermissions`, `AddSteamModules`, and
+`AddMonitoringHistory`, followed by `RestrictModuleOperations`. The last migration
+removes obsolete command associations and action grants while retaining audit records.
+Reassign Operations and refresh affected sessions after upgrading. Configure
+authenticated TLS agents before restarting UI
+replicas. No historical monitoring data is fabricated during upgrade.

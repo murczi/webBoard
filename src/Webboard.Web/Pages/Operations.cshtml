@@ -1,0 +1,29 @@
+@page
+@model OperationsModel
+@{ ViewData["Title"] = "Module operations"; }
+<a asp-page="/Index">← Dashboard</a>
+<h1 class="h3 mt-3">@Model.Module.Name</h1>
+<p>Operations run on @Model.Module.HostName. Confirm the target before continuing.</p>
+<div class="d-flex flex-wrap gap-2">
+@foreach (var operation in new[] { "start", "stop", "restart", "enable", "disable" }) {
+    if (!Model.AllowedOperations.Contains(operation) || Model.Module.TypeName == "Docker" && operation is "enable" or "disable") { continue; }
+    var label = operation switch {
+        "start" => Model.Module.TypeName == "Docker" ? "Up" : "Start",
+        "stop" => Model.Module.TypeName == "Docker" ? "Down" : "Stop",
+        "restart" => "Restart", "enable" => "Enable", _ => "Disable"
+    };
+    <form method="post" asp-page-handler="Execute" class="operation-form" data-confirm="@operation @Model.Module.Name on @Model.Module.HostName?">
+        <input type="hidden" name="moduleId" value="@Model.Module.Id" />
+        <input type="hidden" name="operation" value="@operation" />
+        <input type="hidden" name="requestId" value="@Guid.NewGuid()" />
+        <button class="btn btn-outline-primary">@label</button>
+    </form>
+}
+</div>
+@if (Model.AllowedOperations.Count == 0) { <p class="text-muted mt-2">No service controls are currently available. Check the agent connection, target allowlist, and host permissions.</p> }
+@if (Model.Module.TypeName == "Docker") { <p class="text-muted mt-2">Up starts the existing container. Down stops it.</p> }
+else { <p class="text-muted mt-2">Enable and Disable change startup at boot; they do not start or stop the service.</p> }
+<pre id="operation-result" class="mt-3 text-wrap" role="status"></pre>
+@section Scripts {
+<script src="~/js/operations.js" asp-append-version="true"></script>
+}

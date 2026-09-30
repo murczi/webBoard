@@ -130,6 +130,67 @@ public sealed class UserAccessTests : IAsyncLifetime {
     }
 
     [PostgresFact]
+    public async Task PermissionUpgradeGrantsHistoryWithoutControlPrivileges() {
+        var user = await Register("existing-admin");
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20260929090847_AddAuditActionsAndPagingIndexes");
+        await db.Database.MigrateAsync();
+        var history = await db.UserCrudAccess.SingleAsync(x => x.UserId == user && x.Resource == "MonitoringHistory");
+        Assert.True(history.CanRead);
+        var module = await db.UserCrudAccess.SingleAsync(x => x.UserId == user && x.Resource == "Modules");
+        Assert.False(module.CanOperate);
+    }
+
+    [PostgresFact]
+    public async Task ConsolidatingOperationsResetsOldGrantsAndPreservesCommandAudit() {
+        var actor = await Register("existing-operator");
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20260929103918_AddMonitoringHistory");
+        await db.Database.ExecuteSqlRawAsync("""
+            UPDATE "UserCrudAccess" SET "CanStart" = true, "CanStop" = true,
+                "CanRestart" = true, "CanEnable" = true, "CanDisable" = true,
+                "CanExecuteCommand" = true WHERE "Resource" = 'Modules'
+            """);
+        var operationId = Guid.NewGuid();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "AuditLogs" ("ActorId", "Comment", "DateCreated", "Action", "OperationId", "Operation", "Outcome")
+            VALUES ({actor}, {"Historical command"}, {DateTime.UtcNow}, {(int)AuditAction.CommandExecution}, {operationId}, {"execute"}, {"Succeeded"})
+            """);
+        await db.Database.MigrateAsync();
+        Assert.False((await db.UserCrudAccess.SingleAsync(x => x.UserId == actor && x.Resource == "Modules")).CanOperate);
+        var audit = await db.AuditLogs.SingleAsync(x => x.OperationId == operationId);
+        Assert.Equal(AuditAction.CommandExecution, audit.Action);
+        Assert.Equal("Succeeded", audit.Outcome);
+        Assert.False(db.Database.HasPendingModelChanges());
+    }
+
+    [PostgresFact]
+    public async Task OperationsGrantImpliesReadAndOnlyAppliesToModules() {
+        var admin = await Register("admin");
+        var user = await Register("operator");
+        await using var db = Context();
+        var service = new UserCrudAccessService(new UserCrudAccessRepository(db));
+        await service.SaveAccessAsync(user, [
+            new() { Resource = "Modules", CanOperate = true },
+            new() { Resource = "Hosts", CanOperate = true },
+            new() { Resource = "AuditLogs", CanOperate = true }
+        ], admin, "Grant operations");
+        var grants = await service.GetAccessAsync(user);
+        var module = Assert.Single(grants, x => x.Resource == "Modules");
+        Assert.True(module.CanOperate); Assert.True(module.CanRead); Assert.False(module.CanUpdate);
+        Assert.All(grants.Where(x => x.Resource != "Modules"), x => Assert.False(x.CanOperate));
+        var sessions = new JwtSessionService(new UserAuthenticationRepository(db), Options.Create(new JwtOptions { SigningKey = new string('x', 64) }));
+        var token = new JwtSecurityTokenHandler().ReadJwtToken((await sessions.RefreshTokenAsync("operator"))!);
+        Assert.Contains(token.Claims, x => x.Value == ModuleAccess.Operations);
+        Assert.Contains(token.Claims, x => x.Value == ModuleAccess.Read);
+        Assert.DoesNotContain(token.Claims, x => x.Value is "Modules:start" or "Modules:executecommand");
+        db.ChangeTracker.Clear();
+        await service.SaveAccessAsync(user, [], admin, "Revoke operations");
+        token = new JwtSecurityTokenHandler().ReadJwtToken((await sessions.RefreshTokenAsync("operator"))!);
+        Assert.DoesNotContain(token.Claims, x => x.Value == ModuleAccess.Operations);
+    }
+
+    [PostgresFact]
     public async Task FirstUserGetsAllAccessAndLaterUsersGetNone() {
         var first = await Register("first");
         var second = await Register("second");
@@ -138,6 +199,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         Assert.Equal(6, grants.Count);
         Assert.All(grants, grant => {
             Assert.True(grant.CanRead);
+            Assert.False(grant.CanOperate);
             var writable = grant.Resource is "Users" or "Hosts" or "Modules";
             Assert.Equal(writable, grant.CanCreate);
             Assert.Equal(writable, grant.CanUpdate);

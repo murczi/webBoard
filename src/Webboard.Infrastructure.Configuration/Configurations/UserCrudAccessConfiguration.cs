@@ -12,7 +12,7 @@ public class UserCrudAccessConfiguration
                 "CK_UserCrudAccess_Resource",
                 "\"Resource\" IN ('Users', 'Hosts', 'Modules', 'ModuleTypes', 'AuditLogs', 'MonitoringHistory')");
 
-            tableBuilder.HasCheckConstraint("CK_UserCrudAccess_Operations", "\"Resource\" = 'Modules' OR (NOT \"CanStart\" AND NOT \"CanStop\" AND NOT \"CanRestart\" AND NOT \"CanEnable\" AND NOT \"CanDisable\" AND NOT \"CanExecuteCommand\")");
+            tableBuilder.HasCheckConstraint("CK_UserCrudAccess_Operations", "\"Resource\" = 'Modules' OR NOT \"CanOperate\"");
             tableBuilder.HasCheckConstraint(
                 "CK_UserCrudAccess_ReadOnlyResources",
                 "\"Resource\" NOT IN ('ModuleTypes', 'AuditLogs', 'MonitoringHistory') OR " +
