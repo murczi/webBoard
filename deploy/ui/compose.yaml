@@ -1,17 +1,31 @@
+# Installation: follow README.md, start PostgreSQL, then run:
+# docker compose pull ui
+# docker compose run --rm --no-deps ui --migrate
+# docker compose up -d ui
+# Configure this file before running those commands. Keep credentials private.
+# Double underscores nest .NET settings; numeric entries are zero-based list indices.
 services:
   ui:
+    # Image to download; replace latest with a published tag to pin a version.
     image: shujidev/webboard:latest
+    # Restart after crashes/host reboots unless you explicitly stop the container.
     restart: unless-stopped
     environment:
+      # Use production configuration and error handling.
       ASPNETCORE_ENVIRONMENT: Production
       # Replace with the database machine's private DNS name/IP and credentials.
       ConnectionStrings__WebboardDatabase: 'Host=db.internal;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      # Signs browser login tokens; keep stable across restarts and UI replicas.
       Authentication__Jwt__SigningKey: "" # Paste output of openssl rand -hex 32
       # Optional agent profile. Remove these keys when deploying without agents.
+      # Exact URL entered in Host management; its certificate must match this name.
       Agents__0__BaseUrl: https://agent.example.com:5081
       Agents__0__Token: "" # Match the remote agent's Security__Tokens__0
+      # Allows monitoring connections to this CIDR, including the agent address.
       Outbound__AllowedPrivateNetworks__0: 10.0.0.0/24 # Replace with your actual monitored subnet
+      # Check interval and persisted history retention; see README.md for limits.
       Monitoring__IntervalSeconds: 30
       Monitoring__RetentionDays: 30
+    # HOST_IP:HOST_PORT:CONTAINER_PORT. Loopback is for a host HTTPS reverse proxy.
     ports:
       - "127.0.0.1:8080:8080"

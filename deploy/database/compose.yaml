@@ -1,25 +1,37 @@
+# Installation: replace the password and private bind IP, then run:
+# docker compose up -d --wait database
+# Run the UI image with --migrate afterward to create application tables.
 services:
   database:
+    # Pin PostgreSQL; changing major versions requires a data upgrade.
     image: postgres:18.4-alpine
+    # Fixed Docker name; remove/change if running multiple stacks on this host.
     container_name: dashboard-postgres
+    # Restart after crashes/host reboots unless explicitly stopped.
     restart: unless-stopped
 
+    # Initial database, owner, and password; used only for an empty data volume.
     environment:
       POSTGRES_DB: dashboard
       POSTGRES_USER: dashboard
       POSTGRES_PASSWORD: "REPLACE_WITH_DATABASE_PASSWORD"
 
+    # HOST_IP:HOST_PORT:CONTAINER_PORT; allow access from the UI machine only.
     ports:
       - "10.0.0.20:5432:5432"
 
+    # Named volume persists data at the PostgreSQL 18 image's data mount path.
     volumes:
       - dashboard-postgres-data:/var/lib/postgresql
 
+    # Wait for PostgreSQL to accept connections; this does not create app tables.
+    # $$ passes $ to the container shell instead of Compose variable substitution.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
 
+# Compose creates this volume; keep the project name stable to reuse it.
 volumes:
   dashboard-postgres-data:

@@ -1,359 +1,141 @@
 # webBoard
 
-Webboard has three independently deployable components. Install Docker with
-Compose on the machines running containers, then copy the relevant Compose
-example into a local `compose.yaml`. You do not need to clone this repository,
-install .NET, or create `.env`. Configure values directly in each Compose file.
+webBoard monitors services through a web UI, PostgreSQL, and optional host agents.
+Deploy them on one machine or on separate machines connected by private DNS or a VPN.
 
-| Component | Image | Where it runs |
+| Component | Image | Installation guide |
 | --- | --- | --- |
-| [UI](deploy/ui/README.md) | `shujidev/webboard:latest` | Web server machine; connects to the database and agents. |
-| [Agent](deploy/agent/README.md) | `shujidev/webboard-agent:latest` | Each Linux machine you want to monitor. |
-| [Database](deploy/database/README.md) | `postgres:18.4-alpine` or managed PostgreSQL | Database machine; reachable from the UI. |
+| UI | `shujidev/webboard:latest` | [UI configuration, login, and monitoring](deploy/ui/README.md) |
+| Database | `postgres:18.4-alpine` or an existing PostgreSQL service | [Database configuration and backups](deploy/database/README.md) |
+| Agent (optional) | `shujidev/webboard-agent:latest` | [Host monitoring, TLS, and service controls](deploy/agent/README.md) |
 
-## Separate machines
+## Requirements
 
-1. Follow the [database guide](deploy/database/README.md) to start PostgreSQL,
-   or use an existing database service.
-2. Follow the [UI guide](deploy/ui/README.md), pointing its connection string
-   at the database machine. Initialize the schema with the UI image's
-   `--migrate` command before starting the UI.
-3. Follow the [agent guide](deploy/agent/README.md) on each monitored machine.
-   Add each agent's private URL in the UI.
+Install Docker Engine and the Compose plugin on each container host. Verify them
+with `docker version` and `docker compose version`. Agent hosts need Linux;
+systemd monitoring also needs the host systemd/D-Bus sockets. Have `openssl`
+available to generate credentials, and an HTTPS reverse proxy for browser access.
+Published images do not require a repository clone, .NET SDK, or `.env` file.
 
-Use private DNS names or VPN IP addresses between machines. Docker Compose
-service names only resolve within their own Docker network, and `localhost`
-inside a container refers to that container. The agent needs no database
-credentials or UI signing key. Users access the UI through HTTPS; the UI
-connects to PostgreSQL and authenticated agent HTTPS APIs over the private network.
+Configure values directly in the Compose files. Comments explain each field;
+the component guides cover prerequisites and troubleshooting. Replace all blank
+secrets and `REPLACE_WITH_…` placeholders before starting. Keep configured files
+and TLS private keys private. Generate a separate database password, UI signing
+key, and token for each agent with `openssl rand -hex 32`.
 
-Each guide contains a standalone Compose example and start/update commands.
-For just the UI and database, follow those two guides; no agent configuration
-is needed.
+## Host setup recipes
 
-## Docker Compose: one machine
+[Deployment prerequisite guides](deploy/docs/README.md) provide terminal commands
+and official sources for the steps outside webBoard itself:
 
-For everything on one Linux Docker/systemd host, save this complete example
-as `compose.yaml` in any directory. It is also available as a
-[downloadable file](deploy/docker-compose.yml).
+- [Install Docker and Compose](deploy/docs/docker-host.md) on a fresh Ubuntu host.
+- [Understand loopback ports and find the Docker subnet](deploy/docs/networking.md).
+- [Create agent certificates and install CA trust in the UI](deploy/docs/agent-tls.md).
+- [Set up UI HTTPS with Caddy](deploy/docs/https-proxy.md), using a public domain or a local CA.
 
-```yaml
-# Configure credentials, image versions, and ports directly in this file.
-# Replace the database password in BOTH places below; keep real credentials private.
-services:
-  database:
-    image: postgres:18.4-alpine
-    container_name: dashboard-postgres
-    restart: unless-stopped
+Each recipe states where to run its commands and which names/IPs to change.
 
-    environment:
-      POSTGRES_DB: dashboard
-      POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: "REPLACE_WITH_DATABASE_PASSWORD"
+## Install on separate machines
 
-    ports:
-      - "127.0.0.1:5432:5432"
+1. Start PostgreSQL using the [database guide](deploy/database/README.md), or
+   obtain the connection details for your existing database.
+2. Configure the [UI Compose file](deploy/ui/compose.yaml) with those connection
+   details and a stable JWT signing key. Run the UI guide's `--migrate` command
+   before starting the web server, then configure HTTPS and register the first account.
+3. For Docker/systemd monitoring, follow the [agent guide](deploy/agent/README.md)
+   on each monitored host. Configure its certificate and token, add matching UI
+   agent profiles, and enter each agent URL in **Host management**.
 
-    volumes:
-      - dashboard-postgres-data:/var/lib/postgresql
+Only the UI needs database credentials. HTTP, Minecraft, and Steam checks do not
+need agents. Private monitoring targets must be included in the UI's
+`Outbound__AllowedPrivateNetworks` list.
 
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+Docker service names resolve only within a shared Docker network. Across machines,
+use reachable private DNS names or VPN IPs. `localhost` inside a container refers
+to that container. Restrict database and agent ports to machines that need them.
 
-  ui:
-    image: shujidev/webboard:latest
-    restart: unless-stopped
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__WebboardDatabase: 'Host=database;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
-      Authentication__Jwt__SigningKey: "" # Required: paste output of openssl rand -hex 32
-      Agents__0__BaseUrl: https://agent:8443 # Certificate must include agent in its SANs
-      Agents__0__Token: "" # Match Security__Tokens__0 on the agent
-      Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
-      Monitoring__IntervalSeconds: 30
-      Monitoring__RetentionDays: 30
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      database:
-        condition: service_healthy
+## Install on one machine
 
-  agent:
-    image: shujidev/webboard-agent:latest
-    restart: unless-stopped
-    environment:
-      ASPNETCORE_URLS: https://+:8443
-      Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
-      Kestrel__Certificates__Default__Path: /tls/agent.pfx
-      Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
-    ports:
-      - "127.0.0.1:5081:8443"
-    group_add:
-      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
-    volumes:
-      - type: bind
-        source: ./tls/agent.pfx
-        target: /tls/agent.pfx
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-        bind:
-          create_host_path: false
-      - type: bind
-        source: /run/dbus/system_bus_socket
-        target: /run/dbus/system_bus_socket
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: /run/systemd/system
-        target: /run/systemd/system
-        read_only: true
-        bind:
-          create_host_path: false
+Create a deployment directory and save [deploy/docker-compose.yml](deploy/docker-compose.yml)
+as `compose.yaml`. Run commands below from that directory. This example uses
+Docker service names for internal connections and loopback host port bindings.
 
-volumes:
-  dashboard-postgres-data:
-```
+Before starting:
 
-Replace the database password in both places, paste a key generated by
-`openssl rand -hex 32` into `Authentication__Jwt__SigningKey`, and replace the
-agent's `999` group ID with `stat -c '%g' /var/run/docker.sock` output. Keep the
-configured file private. For an existing database volume, retain its current
-credentials and Compose project name. See the agent guide for mount requirements.
-
-From the directory containing `compose.yaml`:
+1. Replace the database password in both `POSTGRES_PASSWORD` and the UI connection
+   string. Generate and fill the UI JWT signing key.
+2. For the agent, generate a separate token and set it in both `Security__Tokens__0`
+   and `Agents__0__Token`. Place its certificate at `./tls/agent.pfx`, set its
+   password, and grant the container UID read access. The certificate must include
+   `agent` in its subject alternative names and be trusted by the UI; see the
+   [certificate creation and UI trust recipe](deploy/docs/agent-tls.md).
+3. Replace `group_add: "999"` with the group ID from
+   `stat -c '%g' /var/run/docker.sock`. Ensure the host sockets exist. Set
+   `Outbound__AllowedPrivateNetworks__0` to the Docker network's actual subnet
+   using the [network inspection commands](deploy/docs/networking.md#discover-the-single-machine-docker-subnet).
+4. For a deployment without agents, remove the `agent` service and UI `Agents__…`
+   fields. Keep the private-network allowlist if you monitor other private targets.
 
 ```sh
+docker compose config --quiet
 docker compose pull
 docker compose up -d --wait database
 docker compose run --rm --no-deps ui --migrate
 docker compose up -d
+docker compose ps
+docker compose logs --tail=100 ui
 ```
 
-For only the UI and database, use `docker compose up -d database ui` as the
-last command; no Docker socket group or agent mounts need configuring.
-The schema command exits after applying migrations; only start the UI if it
-succeeds. Run it once per database. No SDK or repository is required.
+Proceed to start the UI only if migrations succeed. For UI/database only, use
+`docker compose up -d database ui` as the final start command. The UI HTTP endpoint
+is `http://localhost:8080`; put an HTTPS reverse proxy in front of it for browser
+login because authentication cookies require HTTPS. Follow the
+[Caddy HTTPS recipe](deploy/docs/https-proxy.md) for a host proxy. A containerized proxy should
+connect to `ui:8080` over a shared network rather than its own `localhost`.
 
-The UI's local HTTP endpoint is `http://localhost:8080`; configure an HTTPS
-reverse proxy for browser access and Secure login cookies. Configure a certificate valid for the agent DNS name, its random token, and the
-UI connection profile before starting agents. Add `https://agent:8443` in the
-single-machine UI; install the issuing CA in the UI trust store when using private TLS.
-See the agent security guide for certificate mounts and authenticated health probes.
+Register your administrator account first. The first registration in an empty
+`Users` table receives CRUD permissions; later accounts start without grants.
+Use **Users → Set Permissions** to assign access. **Modules → Operations** must
+be granted separately, including for the first account, and requires agent allowlists.
 
-## Updates
+## Update and stop
 
-The UI and agent default to `latest`. New images are downloaded when you run
-`docker compose pull`; containers are replaced by `docker compose up -d`.
-These are explicit updates, not automatic restarts whenever an image is published.
-Numbered tags (`1.0`, `1.1`, `1.2`, etc.) remain available for pinned deployments.
-PostgreSQL stays on a specific version so pulling cannot unexpectedly change
-its major version.
-
-For the single-machine stack, back up the database, then:
+Back up PostgreSQL before upgrades. Keep the database credentials, JWT signing
+key, TLS files, tokens, and Compose project name stable. For the one-machine stack:
 
 ```sh
 docker compose pull ui agent
 docker compose stop ui
 docker compose run --rm --no-deps ui --migrate
 docker compose up -d
+docker compose ps
 ```
 
-Stop all UI replicas before schema upgrades and run migrations once. For
-separate machines, use the upgrade commands in each component's guide.
-If a migration fails, resolve it before restarting the UI. To stop the stack
-without deleting data, use `docker compose down`; adding `--volumes` deletes
-its database volume.
+Omit `agent` from the pull command if it is not deployed. Stop every UI replica
+before migrating and run migrations once per database. Resolve failures before
+restarting the UI. Separate-machine update commands are in the component guides.
 
-See [Compose pull behavior](https://docs.docker.com/reference/cli/docker/compose/pull/)
-and [EF Core migration deployment](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying)
-for the underlying update mechanisms.
+`latest` downloads the current image when pulled; deployed containers update when
+recreated with `up -d`. Set a published numbered tag for a pinned version. PostgreSQL
+major-version changes require a planned data upgrade. An older UI image may also
+need a compatible database backup to roll back.
 
-## Docker images and CI/CD
+`docker compose down` stops the stack while preserving the named database volume.
+Adding `--volumes` deletes that data. Moving Compose to a different directory can
+change its project name and select a different volume; retain the original project
+name with `docker compose -p <original-name> …`.
 
-Pull requests to `main` run the .NET build and tests and build both Docker
-images. Every push to `main` runs the same .NET checks, builds both images,
-and publishes them to Docker Hub:
+## Build images locally
 
-- `shujidev/webboard:1.0` — the web UI, listening on container port `8080`.
-- `shujidev/webboard-agent:1.0` — the host agent, listening on container port `8080`.
-
-Both images share an automatically generated version: `1.0`, `1.1`, `1.2`,
-and so on (after `1.9` comes `1.10`). The minor number is the publishing
-workflow's run number minus one. Pull requests do not consume versions.
-Failed or cancelled publishing runs can leave gaps; re-running a failed run
-reuses its version. Keep the publishing workflow's identity to preserve its
-counter. Images are published for `linux/amd64` using numbered tags and `latest`.
-
-### Maintainer setup
-
-Create a Docker Hub access token for `shujidev` with **Read & Write** access
-to both image repositories. In this GitHub repository, open **Settings →
-Secrets and variables → Actions → New repository secret**, and save it as
-`DOCKERHUB_TOKEN`. Commit and push the workflow files to `main` to start the
-first build. The GitHub Actions run summary lists the published image tags.
-
-After both numbered images are pushed, CI updates both `latest` tags if the
-commit is still the head of `main`. Re-running an older commit does not move
-`latest` backwards. The two registry updates are separate operations; if one
-fails, re-run the failed publishing job. `latest` and the migration command
-become available after the first successful publication containing these changes.
-
-Both images must build before publishing starts. Docker Hub pushes are
-separate operations: if one fails, re-run the failed publishing job to finish
-the pair with the same version. Publishing images does not restart deployed
-containers; update your deployment to the desired image version.
-
-### Local builds and configuration
-
-Run from the repository root:
+Clone this repository and run from its root:
 
 ```sh
 docker build -f deploy/ui/Dockerfile -t shujidev/webboard:local .
 docker build -f deploy/agent/Dockerfile -t shujidev/webboard-agent:local .
 ```
 
-Configure the UI container using `ConnectionStrings__WebboardDatabase` and
-`Authentication__Jwt__SigningKey` environment variables. Serve the UI over
-HTTPS for its secure authentication cookies. Local `.env` files and
-development settings are excluded from both Docker build contexts.
-See the [agent README](deploy/agent/README.md) for host socket mounts
-and agent configuration.
-
-The workflows follow the [Docker GitHub Actions documentation](https://docs.docker.com/build/ci/github-actions/push-multi-registries/)
-and use [GitHub's workflow run counter](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
-for versioning.
-
-## Authentication
-
-The web app signs users in from the existing `Users` table and loads their rows
-from `UserCrudAccess`. Successful logins receive an eight-hour JWT in an
-HttpOnly, Secure, SameSite=Strict browser-session cookie. Selecting “Remember
-me” makes both the JWT and cookie persist for 30 days. Granted operations are
-represented by repeatable `access` claims such as `Hosts:read` and
-`Modules:update`.
-
-`Users.PasswordHash` supports the user backend's
-`PBKDF2-SHA256$<iterations>$<salt>$<hash>` format as well as ASP.NET Core
-Identity V3 hashes. For non-development deployments, set a random signing key
-of at least 32 bytes before starting the app:
-
-```sh
-export Authentication__Jwt__SigningKey='replace-with-a-long-random-production-key'
-```
-
-Registration checks usernames case-insensitively. The first account registered
-in an empty `Users` table receives all supported CRUD grants (read only for
-module types and audit logs). Concurrent registrations are serialized so only
-one account receives this initial administrator access. Later accounts receive
-no grants. Existing databases are not automatically promoted on upgrade.
-
-User management requires `Users:read`; changing anyone's permissions requires
-`Users:update`, and deleting another account requires `Users:delete`. Grant
-`Users:update` only to users trusted to manage all permissions, including their
-own. Permission changes and deletion also check the actor's current database
-grants. Users cannot delete their own account.
-
-Saving create, update, or delete access automatically enables read access for
-that resource. Use **Refresh access** or sign in again to load newly assigned
-permissions. No additional Compose setting or admin role column is required.
-
-PostgreSQL integration tests run with `WEBBOARD_TEST_DATABASE` set to a test
-server connection string with CREATE DATABASE rights, using
-`dotnet test Webboard.slnx`. Each test creates and drops a separate database;
-these tests are skipped when the variable is unset.
-
-The checked-in development configuration contains a local-only signing key and
-must not be used in production.
-
-## Workspace navigation and audit history
-
-The sidebar opens read-only **Modules**, **Hosts**, and **Users** pages. Users
-with write permissions can switch to the corresponding management page with
-**Manage**, then return with **Back to …**. Module configuration includes hidden
-modules; the viewing dashboard shows enabled modules only. Host Enabled/Disabled
-labels describe configuration, not live reachability.
-
-Everyone with module read access can open **Arrange modules**. Users with write
-permissions enter the same preview through **Manage modules**, with additional
-configuration controls according to their permissions. Readers cannot see editing
-forms, configuration actions, or hidden modules.
-
-The arrangement preview uses dashboard-sized tiles without Open links or live
-health checks. Drag visible tiles by their handles using a mouse or touch, or use
-the earlier/later buttons and arrow keys on a focused handle. Ordering saves
-automatically in local storage, separately for each account in the current
-browser, and is applied to the viewing dashboard. It does not sync between devices
-or create audit events. **Reset arrangement** restores alphabetical order. If
-storage is unavailable, the page explains that changes could not be saved.
-
-Hidden modules remain in a separate configuration section. Their saved positions
-are retained when they become visible again; newly encountered modules are appended
-in alphabetical order. Hosts and Users do not support rearrangement. Personal
-module ordering requires no database migration.
-
-The viewing dashboard displays health failure messages directly, with response
-time shown separately. Feedback distinguishes a missing container or service,
-an unreachable or timed-out host agent, unavailable Docker/systemd, and invalid
-agent responses. A failed agent connection does not establish that the entire
-host is offline. Open links remain available on the viewing dashboard.
-
-The theme selector supports **System**, **Light**, and **Dark**, saved in this
-browser. System follows the device preference.
-
-**Audit log** requires `AuditLogs:read` and shows all recorded events, including
-history for deleted items. Filter by resource, action, actor, or UTC date range.
-Item history links preselect a target; remove that filter to broaden the view.
-Results use server-side pagination with 25 events per page.
-
-This release requires the `AddAuditActionsAndPagingIndexes` database migration.
-Run the existing `--migrate` deployment step before starting the updated UI.
-Older events appear as **Legacy**; new events record explicit Create, Update,
-Delete, or Permissions changed actions. Existing comments are not interpreted
-to guess historical actions.
-
-
-## Monitoring and operations
-
-See [security and Docker-agent controls](deploy/agent/README.md)
-and [monitoring configuration](deploy/ui/README.md#background-monitoring-and-history).
-Agents now require authentication and secured transport. Existing installations must
-configure matching UI/agent tokens and TLS before upgrading. Private monitoring
-networks must be explicitly listed in `Outbound:AllowedPrivateNetworks`.
-
-The new migrations are `AddModuleOperationsAndPermissions`, `AddSteamModules`, and
-`AddMonitoringHistory`, followed by `RestrictModuleOperations`. Use the existing `--migrate` procedure with all UI replicas
-stopped. Existing module readers receive history access; refresh access after the
-upgrade. The new Operations permission defaults to off for all accounts.
-Permission administrators grant **Modules → Operations** in User management; the
-agent allowlist restricts permitted containers/services and actions. Custom command
-execution is removed. Deploy the agent only through Docker; systemd enable/disable
-requires the documented one-time host polkit setup.
-
-Steam modules query the explicit UDP query port (often 27015; game port can differ).
-They display server name, game, map, population, latency, and availability. Optional
-player details may be unavailable on otherwise healthy servers. The implementation
-supports Source A2S_INFO with challenges and split/BZip2 responses. Legacy GoldSrc
-info packets and unusual pre-Orange-Box split layouts are reported as incompatible;
-other modules continue monitoring normally. BZip2 decoding uses
-[SharpZipLib](https://github.com/icsharpcode/SharpZipLib).
-
-Monitoring results are separate from configuration/execution audit events. The
-dashboard and history page poll persisted results while visible, without launching
-health checks. History uses proportional blocks with explicit unknown gaps, a
-shared time range, per-account browser visibility, and keyboard/touch inspection.
-Disabled modules retain history but are not checked. Changing a module/host
-configuration invalidates its current result and starts a gap until the next check.
-
-Run `dotnet test Webboard.slnx` with `WEBBOARD_TEST_DATABASE` pointing at an isolated
-PostgreSQL server with CREATE DATABASE permission. Tests create/drop only uniquely
-named test databases. CI now runs these integration tests. Agent tests use test
-servers, fake process runners, a temporary Unix socket, and controlled child processes;
-they must never target a real Docker socket or service manager.
+The [UI Dockerfile](deploy/ui/Dockerfile) and [agent Dockerfile](deploy/agent/Dockerfile)
+explain the build/runtime stages, dependency caching, ports, and non-root user.
+Set the corresponding Compose `image` to the `:local` tag and follow the same
+installation procedure, skipping image pulls for locally built images. Development
+settings, `.env` files, and private TLS material are excluded from build contexts.

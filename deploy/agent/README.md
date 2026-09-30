@@ -1,10 +1,23 @@
-# webBoard agent security and deployment
+# webBoard agent
 
 Deploy one agent per monitored machine, independently of the UI and PostgreSQL.
 All endpoints, including `/health`, discovery, and operations,
 require `Authorization: Bearer <token>`. Generate a different token for each agent
 with `openssl rand -hex 32`. Never place tokens in URLs, module properties, or
 browser JavaScript. The agent fails startup without a token of at least 32 bytes.
+
+[Deployment overview](../../README.md) · [UI setup](../ui/README.md)
+
+For host prerequisites, follow [Docker installation](../docs/docker-host.md) and
+[ports/private networking](../docs/networking.md).
+
+## Requirements
+
+Use a Linux Docker host with Compose. Docker monitoring requires
+`/var/run/docker.sock`; systemd monitoring requires a systemd host with
+`/run/dbus/system_bus_socket` and `/run/systemd/system`. Create a deployment
+directory and save the Compose file there. No .NET SDK, repository clone, or
+`.env` file is needed for published images.
 
 ## Container deployment
 
@@ -14,6 +27,121 @@ password, and a private bind address. The example serves HTTPS on container port
 name used by the UI. Give the container's non-root UID read access to the certificate
 and socket group access using `stat -c '%g' /var/run/docker.sock`. Protect the
 Compose file and certificate password. No privileged container is required.
+
+The complete [Compose file](compose.yaml) is:
+
+```yaml
+# Installation: prepare TLS and host sockets as described in README.md, then run:
+# docker compose pull agent
+# docker compose up -d agent
+# Configure this file first; the UI must trust the certificate and use the same token.
+# Double underscores nest .NET settings; numeric entries are zero-based list indices.
+services:
+  agent:
+    # Use latest or a published tag for a pinned version.
+    image: shujidev/webboard-agent:latest
+    # Restart after crashes/host reboots unless explicitly stopped.
+    restart: unless-stopped
+    environment:
+      # HTTPS listener inside the container; must match the port mapping below.
+      ASPNETCORE_URLS: https://+:8443
+      Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
+      # Container path to the mounted PFX and its export password.
+      Kestrel__Certificates__Default__Path: /tls/agent.pfx
+      Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
+      # Operations default to off. Opt in exact targets and individual actions:
+      # Controls__Docker__0__Target: my-game-server
+      # Controls__Docker__0__Operations__0: start
+      # Controls__Docker__0__Operations__1: stop
+      # Controls__Docker__0__Operations__2: restart
+      # Controls__Systemd__0__Target: example.service
+      # Controls__Systemd__0__Operations__0: restart
+      # Enable/disable also require the host polkit setup in README.md.
+    # Optional: override to match a dedicated host account for systemd policy.
+    # user: "1654:1654"
+    # HOST_IP:HOST_PORT:CONTAINER_PORT; replace with this host's private/VPN IP.
+    ports:
+      - "10.0.0.30:5081:8443"
+    # Supplemental host Docker socket group lets the non-root process access Docker.
+    group_add:
+      - "999" # Replace with: stat -c '%g' /var/run/docker.sock
+    # Bind existing host files/sockets. Paths below target the monitored host.
+    # create_host_path: false fails on missing files instead of creating directories.
+    volumes:
+      - type: bind
+        # Relative to this Compose file; readable by the container UID.
+        source: ./tls/agent.pfx
+        target: /tls/agent.pfx
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # Docker discovery/status/control; socket access grants host-level authority.
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+      - type: bind
+        # Host system bus for systemd queries and authorized operations.
+        source: /run/dbus/system_bus_socket
+        target: /run/dbus/system_bus_socket
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # Host systemd runtime marker for the container's systemd tools.
+        source: /run/systemd/system
+        target: /run/systemd/system
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
+| Field | Purpose and what to change |
+| --- | --- |
+| `image` / `restart` | Agent image version and `unless-stopped` restart policy. Use a published tag to pin an image. |
+| `ASPNETCORE_URLS` | Internal listener, `https://+:8443`; match the container port in `ports`. |
+| `Security__Tokens__0` | Random API bearer token of at least 32 bytes. Use the identical value in this agent's UI profile. Additional indexed tokens support rotation. |
+| `Kestrel__Certificates__Default__Path` | PFX path inside the container; match the TLS mount target. |
+| `Kestrel__Certificates__Default__Password` | Password used when exporting the PFX. |
+| `ports` | `HOST_IP:HOST_PORT:CONTAINER_PORT`; replace `10.0.0.30` with this host's private/VPN interface IP. The UI uses host port `5081`. |
+| `user` (optional) | Override numeric UID/GID to match a dedicated host account for systemd authorization. |
+| `group_add` | Numeric group owning the host Docker socket, from `stat -c '%g' /var/run/docker.sock`. |
+| TLS bind mount | Existing certificate at `./tls/agent.pfx`, relative to Compose; mounted read-only at `/tls/agent.pfx`. |
+| Docker socket bind mount | Access to host Docker discovery, status, and allowed operations. Socket access grants effective host-root authority to the agent process. |
+| D-Bus/systemd bind mounts | Host system bus and runtime marker used for service queries/controls; host policy still applies. |
+| `read_only` / `bind.create_host_path` | Read-only mounts prevent file writes; `create_host_path: false` rejects missing sources instead of creating directories. A read-only socket mount still allows API calls. |
+| `Controls__Docker__…` / `Controls__Systemd__…` | Optional lists of exact targets and allowed actions; controls stay off until configured. See below. |
+
+.NET settings use double underscores between sections and zero-based list
+indices. Add a second target as `Controls__Docker__1__Target`, with its actions
+under `Controls__Docker__1__Operations__0`, and so on.
+
+## Prepare TLS and start
+
+Follow the [agent certificate recipe](../docs/agent-tls.md) to create a private CA,
+issue a certificate for the exact agent URL, export `tls/agent.pfx`, grant the
+container UID read access, and build the UI trust image. It also covers using a
+certificate IP SAN, authenticated health checks, and renewal. If you already have
+CA-issued PEM files, export them with:
+
+```sh
+mkdir -p tls
+openssl pkcs12 -export -out tls/agent.pfx -inkey agent.key -in agent.crt -certfile ca-chain.crt
+openssl rand -hex 32
+stat -c '%g' /var/run/docker.sock
+```
+
+Set the export password, generated token, socket group, and host private bind IP
+in Compose. Omit `-certfile` if the issuer supplies no separate chain file.
+
+```sh
+docker compose config --quiet
+docker compose pull agent
+docker compose up -d agent
+docker compose ps
+docker compose logs --tail=100 agent
+```
 
 Configure the UI with the same URL and token:
 
@@ -34,10 +162,14 @@ image with the CA certificate and `update-ca-certificates` as root, then return 
 network still require matching certificate names and an allowed private subnet.
 Docker service names do not resolve across independent machines; use DNS or VPN IPs.
 
-A health probe from an authorized machine is:
+From an authorized machine, verify the configured token and TLS with this Bash
+health probe. For a private CA, add `--cacert /path/to/ca.crt`:
 
 ```sh
+read -r -s -p "Agent token: " WEBBOARD_AGENT_TOKEN
+printf '\n'
 curl --fail --header "Authorization: Bearer $WEBBOARD_AGENT_TOKEN" https://agent.example.com:5081/health
+unset WEBBOARD_AGENT_TOKEN
 ```
 
 For an existing **encrypted VPN/tunnel**, HTTP is an explicit exception on both
@@ -144,22 +276,27 @@ verify the target manually before issuing a new operation. Docker/systemd jobs c
 continue after the client times out. Duplicate IDs are never redispatched by the
 UI; the agent also caches recent completed IDs in memory, which resets on restart.
 
-## API and upgrades
+## Update and stop
 
-- `GET /health`, `/docker/containers`, `/docker/containers/{id}/status`
-- `GET /systemd/services`, `/systemd/services/{name}/status`
-- `GET /capabilities?kind=Systemd&target=example.service` returns allowlisted verbs.
-- `POST /operations` accepts requestId, moduleId, kind (Docker/Systemd),
-  target, and operation. Unknown JSON properties are rejected.
+From the agent Compose directory:
 
-Update containers using `docker compose pull agent` and `docker compose up -d agent`.
-Agent upgrades never run UI database migrations. On migration from the old unauthenticated agent, configure
-security on both ends together; there is no anonymous compatibility mode.
+```sh
+docker compose pull agent
+docker compose up -d agent
+docker compose logs --tail=100 agent
+```
 
-Upgrade the UI and agent together with UI replicas stopped. Apply the
-`RestrictModuleOperations` migration before starting the new UI; it deletes obsolete
-command associations and individual action grants and sets Operations to off for
-all existing accounts. Historical audit records are retained. Reassign Operations
-in User management and refresh the affected sessions. Remove old `Commands` and
-`Systemd:UseSudo` configuration. Rolling back the schema cannot recover deleted
-command associations or previous permission grants.
+Verify the authenticated health probe after updating. Agent upgrades do not run
+database migrations. For a UI/agent upgrade, stop UI replicas and follow the
+[UI upgrade procedure](../ui/README.md#upgrade). Preserve tokens, certificates,
+and allowlists. Use `docker compose stop agent` to stop monitoring on this host.
+
+## Troubleshooting
+
+- **Startup fails:** fill the token and certificate password, check that the PFX exists and is readable by the container UID, and review agent logs.
+- **Port bind fails:** use an IP assigned to this host and an unused host port.
+- **Health probe returns 401:** use a configured bearer token; `/health` also requires authentication.
+- **TLS verification fails:** match the certificate SAN to the UI URL and install the issuing CA in the UI trust store.
+- **Docker discovery fails:** check the socket exists and `group_add` matches its numeric host group.
+- **systemd queries or controls fail:** check the mounted host sockets, agent allowlist, matching host UID, and polkit policy. Enable/disable additionally needs the unit-file authorization described above.
+- **Buttons are unavailable:** grant **Modules → Operations**, refresh access, and explicitly allow the target action on the agent.

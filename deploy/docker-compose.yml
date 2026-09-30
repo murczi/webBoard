@@ -1,4 +1,7 @@
+# One-machine installation: see ../README.md and each component README.
+# Start database, run the UI with --migrate, then start the stack.
 # Configure credentials, image versions, and ports directly in this file.
+# .NET settings use __ between sections; numeric fields index lists from zero.
 # Replace the database password in BOTH places below; keep real credentials private.
 services:
   database:
@@ -6,17 +9,20 @@ services:
     container_name: dashboard-postgres
     restart: unless-stopped
 
+    # Initial credentials apply only to an empty data volume.
     environment:
       POSTGRES_DB: dashboard
       POSTGRES_USER: dashboard
       POSTGRES_PASSWORD: "REPLACE_WITH_DATABASE_PASSWORD"
 
+    # Loopback host binding: HOST_IP:HOST_PORT:CONTAINER_PORT.
     ports:
       - "127.0.0.1:5432:5432"
 
     volumes:
       - dashboard-postgres-data:/var/lib/postgresql
 
+    # Wait for connections; $$ defers expansion to the container shell.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -35,8 +41,10 @@ services:
       Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
       Monitoring__IntervalSeconds: 30
       Monitoring__RetentionDays: 30
+    # Loopback host binding: HOST_IP:HOST_PORT:CONTAINER_PORT.
     ports:
       - "127.0.0.1:8080:8080"
+    # Database readiness does not apply schema migrations; run --migrate separately.
     depends_on:
       database:
         condition: service_healthy
@@ -49,10 +57,13 @@ services:
       Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
       Kestrel__Certificates__Default__Path: /tls/agent.pfx
       Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
+    # Loopback host binding: HOST_IP:HOST_PORT:CONTAINER_PORT.
     ports:
       - "127.0.0.1:5081:8443"
+    # Non-root process needs the host Docker socket group.
     group_add:
       - "999" # Replace with: stat -c '%g' /var/run/docker.sock
+    # Existing host TLS/socket paths; missing files fail instead of creating directories.
     volumes:
       - type: bind
         source: ./tls/agent.pfx
@@ -78,5 +89,6 @@ services:
         bind:
           create_host_path: false
 
+# Persistent database storage; keep the Compose project name stable.
 volumes:
   dashboard-postgres-data:

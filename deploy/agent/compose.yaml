@@ -1,10 +1,19 @@
+# Installation: prepare TLS and host sockets as described in README.md, then run:
+# docker compose pull agent
+# docker compose up -d agent
+# Configure this file first; the UI must trust the certificate and use the same token.
+# Double underscores nest .NET settings; numeric entries are zero-based list indices.
 services:
   agent:
+    # Use latest or a published tag for a pinned version.
     image: shujidev/webboard-agent:latest
+    # Restart after crashes/host reboots unless explicitly stopped.
     restart: unless-stopped
     environment:
+      # HTTPS listener inside the container; must match the port mapping below.
       ASPNETCORE_URLS: https://+:8443
       Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)
+      # Container path to the mounted PFX and its export password.
       Kestrel__Certificates__Default__Path: /tls/agent.pfx
       Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
       # Operations default to off. Opt in exact targets and individual actions:
@@ -17,29 +26,37 @@ services:
       # Enable/disable also require the host polkit setup in README.md.
     # Optional: override to match a dedicated host account for systemd policy.
     # user: "1654:1654"
+    # HOST_IP:HOST_PORT:CONTAINER_PORT; replace with this host's private/VPN IP.
     ports:
       - "10.0.0.30:5081:8443"
+    # Supplemental host Docker socket group lets the non-root process access Docker.
     group_add:
       - "999" # Replace with: stat -c '%g' /var/run/docker.sock
+    # Bind existing host files/sockets. Paths below target the monitored host.
+    # create_host_path: false fails on missing files instead of creating directories.
     volumes:
       - type: bind
+        # Relative to this Compose file; readable by the container UID.
         source: ./tls/agent.pfx
         target: /tls/agent.pfx
         read_only: true
         bind:
           create_host_path: false
       - type: bind
+        # Docker discovery/status/control; socket access grants host-level authority.
         source: /var/run/docker.sock
         target: /var/run/docker.sock
         bind:
           create_host_path: false
       - type: bind
+        # Host system bus for systemd queries and authorized operations.
         source: /run/dbus/system_bus_socket
         target: /run/dbus/system_bus_socket
         read_only: true
         bind:
           create_host_path: false
       - type: bind
+        # Host systemd runtime marker for the container's systemd tools.
         source: /run/systemd/system
         target: /run/systemd/system
         read_only: true

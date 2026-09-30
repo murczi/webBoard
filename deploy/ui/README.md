@@ -7,21 +7,44 @@ no repository clone, .NET SDK, or `.env` is required.
 [Deployment overview](../../README.md) · [Database setup](../database/README.md) ·
 [Agent setup](../agent/README.md)
 
+For host prerequisites, follow [Docker installation](../docs/docker-host.md) and
+[ports/private networking](../docs/networking.md).
+
 ## Compose file
 
 Create a directory on the UI machine and save this as `compose.yaml`
 (or download the [Compose file](compose.yaml)):
 
 ```yaml
+# Installation: follow README.md, start PostgreSQL, then run:
+# docker compose pull ui
+# docker compose run --rm --no-deps ui --migrate
+# docker compose up -d ui
+# Configure this file before running those commands. Keep credentials private.
+# Double underscores nest .NET settings; numeric entries are zero-based list indices.
 services:
   ui:
+    # Image to download; replace latest with a published tag to pin a version.
     image: shujidev/webboard:latest
+    # Restart after crashes/host reboots unless you explicitly stop the container.
     restart: unless-stopped
     environment:
+      # Use production configuration and error handling.
       ASPNETCORE_ENVIRONMENT: Production
       # Replace with the database machine's private DNS name/IP and credentials.
       ConnectionStrings__WebboardDatabase: 'Host=db.internal;Port=5432;Database=dashboard;Username=dashboard;Password=REPLACE_WITH_DATABASE_PASSWORD'
+      # Signs browser login tokens; keep stable across restarts and UI replicas.
       Authentication__Jwt__SigningKey: "" # Paste output of openssl rand -hex 32
+      # Optional agent profile. Remove these keys when deploying without agents.
+      # Exact URL entered in Host management; its certificate must match this name.
+      Agents__0__BaseUrl: https://agent.example.com:5081
+      Agents__0__Token: "" # Match the remote agent's Security__Tokens__0
+      # Allows monitoring connections to this CIDR, including the agent address.
+      Outbound__AllowedPrivateNetworks__0: 10.0.0.0/24 # Replace with your actual monitored subnet
+      # Check interval and persisted history retention; see README.md for limits.
+      Monitoring__IntervalSeconds: 30
+      Monitoring__RetentionDays: 30
+    # HOST_IP:HOST_PORT:CONTAINER_PORT. Loopback is for a host HTTPS reverse proxy.
     ports:
       - "127.0.0.1:8080:8080"
 ```
@@ -36,6 +59,38 @@ its trusted CA configured).
 Generate a signing key with `openssl rand -hex 32` and paste it into
 `Authentication__Jwt__SigningKey`. Keep the key stable across upgrades and use
 the same key on all UI replicas. Keep your configured Compose file private.
+
+## Configuration fields
+
+.NET environment keys use `__` to separate sections and zero-based indices for
+lists: `Agents__1__BaseUrl` and `Agents__1__Token` configure a second agent.
+Add these keys beneath `environment`, aligned with the existing entries.
+
+| Field | Purpose and what to change |
+| --- | --- |
+| `image` | Published UI image; use `latest` or a published pinned tag. |
+| `restart` | `unless-stopped` restarts the UI after crashes and Docker restarts until explicitly stopped. |
+| `ASPNETCORE_ENVIRONMENT` | Keep `Production` for deployed instances. |
+| `ConnectionStrings__WebboardDatabase` | `Host` is reachable from the container; `Port` is the database listener; `Database`, `Username`, and `Password` match PostgreSQL. |
+| `Authentication__Jwt__SigningKey` | Random login-token signing secret, at least 32 bytes. Keep stable and identical on replicas. |
+| `Agents__0__BaseUrl` / `Agents__0__Token` | Agent URL and bearer token matching the remote agent. Remove both when no agents are used. |
+| `Outbound__AllowedPrivateNetworks__0` | Permitted private monitoring CIDR; use your actual subnet and numbered entries for additional networks. Required for private targets even without agents. |
+| `Monitoring__IntervalSeconds` / `Monitoring__RetentionDays` | Check cadence and history retention; limits and other settings are listed below. |
+| `ports` | `HOST_IP:HOST_PORT:CONTAINER_PORT`. `127.0.0.1:8080:8080` exposes HTTP only to this host for its HTTPS reverse proxy. |
+
+## Prepare the UI host
+
+Verify `docker compose version`. Create a deployment directory, save the Compose
+file there, and configure it before running commands. Generate the signing key:
+
+```sh
+openssl rand -hex 32
+docker compose config --quiet
+```
+
+Paste the generated key into the file. If using agents, prepare their TLS and
+matching profiles using the [agent guide](../agent/README.md). For a private CA,
+follow the [certificate and UI trust recipe](../docs/agent-tls.md) before starting the UI.
 
 ## Initialize and start
 
@@ -56,6 +111,7 @@ The database user used for this command must have schema-change permissions.
 
 The UI listens on `127.0.0.1:8080` on this machine. Place an HTTPS reverse proxy
 on the same machine in front of it; login cookies are Secure and need HTTPS.
+The [Caddy guide](../docs/https-proxy.md) includes public-domain and local HTTPS commands.
 If your proxy runs in a separate container or machine, connect it using a
 shared Docker network or bind the UI port to a private interface reachable
 by that proxy. Do not use the proxy container's `localhost` to reach the UI.
@@ -73,8 +129,7 @@ only work on the same Docker network; they do not resolve across machines.
 
 ## Upgrade
 
-Wait for the **Publish Docker images** workflow on `main` to succeed before
-pulling. Back up the database. Preserve the database credentials and JWT signing
+Back up the database before pulling an updated image. Preserve the database credentials and JWT signing
 key, and configure matching UI/agent tokens, trusted TLS certificates, and the
 allowed private monitoring networks before restarting either component.
 
@@ -108,10 +163,6 @@ docker compose up -d ui
 docker compose logs --tail=100 ui
 ```
 
-After this upgrade, grant **Modules → Operations** to the intended users and
-refresh their sessions. For systemd controls, also complete the agent guide's
-one-time host account and polkit setup, and configure the agent action allowlist.
-
 `latest` follows new published builds; pulling it does not restart containers.
 For controlled upgrades, replace `latest` with a numbered tag such as `1.2`
 and use the same commands. Database changes may prevent rolling back an older
@@ -140,15 +191,9 @@ CIDR configuration. Redirects are not followed, metadata/link-local/multicast ta
 are rejected, and DNS results are checked at connection time. No credentials are
 sent by HTTP module health checks. Management URLs remain ordinary browser links.
 
-For private-CA agent certificates, build a derived image with the CA installed:
-
-```dockerfile
-FROM shujidev/webboard:latest
-USER root
-COPY agent-ca.crt /usr/local/share/ca-certificates/agent-ca.crt
-RUN update-ca-certificates
-USER $APP_UID
-```
+For private-CA agent certificates, use the [CA trust image commands](../docs/agent-tls.md#trust-the-ca-in-the-ui-image).
+They create a local UI image containing only the public CA certificate and explain
+how to use and rebuild that image during upgrades.
 
 Use identical monitoring settings on all UI replicas. PostgreSQL advisory locks
 coordinate each module so replicas cannot produce duplicate concurrent results.
@@ -173,17 +218,15 @@ stored timestamps are UTC; controls and labels use the browser timezone. Custom
 ranges are limited to ten years, with periods outside retention shown as Unknown.
 History visibility changes do not change monitoring configuration.
 
-Existing module readers receive `MonitoringHistory:read` during migration. Users
-must Refresh access or sign in again to load that grant. Grant **Modules → Operations** explicitly in User management; it defaults to off
-for all accounts. The agent allowlist determines which Docker/systemd actions are
-available. Module CRUD permissions do not imply operation permissions, and arbitrary
-command execution is not supported. Current database grants are
-checked on each operation, so revocation applies without waiting for JWT expiry.
+Grant **Modules → Operations** explicitly in User management when users need
+service controls. It defaults to off. The agent allowlist determines available
+Docker/systemd actions. Refresh access or sign in again after permission changes.
 
-Upgrade with all UI replicas stopped and run `--migrate` once, as above. This release
-adds `AddModuleOperationsAndPermissions`, `AddSteamModules`, and
-`AddMonitoringHistory`, followed by `RestrictModuleOperations`. The last migration
-removes obsolete command associations and action grants while retaining audit records.
-Reassign Operations and refresh affected sessions after upgrading. Configure
-authenticated TLS agents before restarting UI
-replicas. No historical monitoring data is fabricated during upgrade.
+## Troubleshooting
+
+- **Migration or database connection fails:** check `docker compose logs --tail=100 ui`, database readiness, connection-string values, and network access from the container. The migration user needs schema-change permissions.
+- **Login does not persist:** use HTTPS through the reverse proxy; the login cookie is Secure. Preserve the signing key across container recreations.
+- **Agent connection fails:** match the exact host URL and profile token, permit the target's private CIDR, and check certificate trust and name using the agent guide's health probe.
+- **History shows Unknown:** check that monitoring is enabled, the module is enabled/configured, and its latest result has not expired.
+
+To stop the UI without affecting PostgreSQL or agents, run `docker compose stop ui`.
