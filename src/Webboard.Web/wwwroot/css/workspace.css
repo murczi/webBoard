@@ -43,9 +43,6 @@ a { text-underline-offset:3px; }
 .audit-comment { min-width:220px; white-space:pre-wrap; overflow-wrap:anywhere; }
 @media(min-width:992px) { .app-sidebar { position:fixed; inset:0 auto 0 0; height:100vh; } .app-content { margin-left:248px; } }
 @media(max-width:767px) { .workspace-main { padding:1.5rem 1rem; } .app-topbar { padding:1rem; } .page-heading { align-items:flex-start; flex-direction:column; } .app-footer { padding:1rem; } }
-@media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; } }
-.searchable-select-search .input-group-text:first-child,.search-result-count,.search-result-count--active { color:var(--workspace-muted); background:var(--bs-tertiary-bg); border-color:var(--workspace-line); }
-.searchable-select-search .form-control { border-color:var(--workspace-line); }
 .user-table-responsive { overflow-x:auto; }
 :focus-visible { outline:2px solid var(--workspace-accent); outline-offset:3px; }
 [data-bs-theme=dark] .btn-outline-secondary { --bs-btn-color:#b4bfd2; --bs-btn-border-color:#637088; --bs-btn-hover-bg:#344059; --bs-btn-hover-color:#fff; --bs-btn-disabled-color:#a5b1c5; }
@@ -68,3 +65,58 @@ a { text-underline-offset:3px; }
 .module-health-feedback { white-space:normal; align-items:flex-start; overflow-wrap:anywhere; }
 .module-health-feedback .module-health-dot { flex-shrink:0; margin-top:.35rem; }
 @media(max-width:575px) { .arrangement-toolbar { align-items:flex-start; flex-direction:column; } }
+
+/* A form between modal-content and modal-body must pass on the height constraint. */
+.modal-dialog-scrollable .modal-content > form {
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    max-height:100%;
+    overflow:hidden;
+}
+.modal-dialog-scrollable .modal-body {
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior-y:contain;
+    scrollbar-gutter:stable;
+}
+.modal-header,.modal-footer { flex-shrink:0; }
+.modal-body,.searchable-select-options,.app-sidebar .offcanvas-body,.table-responsive,.user-table-responsive {
+    scrollbar-width:thin;
+    scrollbar-color:var(--workspace-muted) var(--bs-tertiary-bg);
+}
+.app-sidebar .offcanvas-body { min-height:0; overflow-y:auto; }
+
+/* The search input occupies the select's usual position. Results expand within
+   the form flow so modal edges cannot clip them or cover the footer actions. */
+.searchable-select { min-width:0; }
+.searchable-select-input { cursor:pointer; text-overflow:ellipsis; }
+.searchable-select.is-open .searchable-select-input { cursor:text; }
+.searchable-select-options {
+    max-height:min(16rem,35dvh);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    margin-top:.35rem;
+    padding:.25rem;
+    border:1px solid var(--workspace-line);
+    border-radius:var(--bs-border-radius);
+    background:var(--workspace-panel);
+    animation:ui-reveal .14s ease-out;
+}
+.searchable-select-option,.searchable-select-empty { padding:.6rem .75rem; overflow-wrap:anywhere; }
+.searchable-select-option { cursor:pointer; border-radius:.3rem; transition:background-color .12s ease; }
+.searchable-select-option[aria-selected=true] { font-weight:600; }
+.searchable-select-option:hover,.searchable-select-option.is-active {
+    background:color-mix(in srgb,var(--workspace-accent) 12%,var(--workspace-panel));
+    color:var(--workspace-accent);
+}
+.searchable-select-empty { color:var(--workspace-muted); }
+.module-type-fields:not(.d-none) { animation:ui-reveal .18s ease-out; }
+.sidebar-link,.btn,.form-control,.form-select { transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease; }
+@keyframes ui-reveal {
+    from { opacity:0; transform:translateY(3px); }
+    to { opacity:1; transform:translateY(0); }
+}
+@media(prefers-reduced-motion:reduce) {
+    *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}

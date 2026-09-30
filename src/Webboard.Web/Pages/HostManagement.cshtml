@@ -119,7 +119,7 @@
 
 @if (Model.CanCreate || Model.CanUpdate) {
     <div class="modal fade" id="host-modal" tabindex="-1" aria-labelledby="host-modal-title" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <form method="post" asp-page-handler="Add" id="host-form"
                       data-test-url="@Url.Page("/HostManagement", "TestAgent")">
