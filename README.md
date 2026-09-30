@@ -114,7 +114,9 @@ connect to `ui:8080` over a shared network rather than its own `localhost`.
 Register your administrator account first. The first registration in an empty
 `Users` table receives CRUD permissions; later accounts start without grants.
 Use **Users → Set Permissions** to assign access. **Modules → Operations** must
-be granted separately, including for the first account, and requires agent allowlists.
+be granted separately, including for the first account, and requires agent target
+allowlists. Each allowed target permits all supported operations, subject to host
+permissions.
 
 ## Update and stop
 

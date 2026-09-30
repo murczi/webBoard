@@ -238,8 +238,10 @@ ranges are limited to ten years, with periods outside retention shown as Unknown
 History visibility changes do not change monitoring configuration.
 
 Grant **Modules → Operations** explicitly in User management when users need
-service controls. It defaults to off. The agent allowlist determines available
-Docker/systemd actions. Refresh access or sign in again after permission changes.
+service controls. It defaults to off. The agent allowlist determines which
+Docker/systemd targets can be controlled; allowed targets permit all supported
+actions, subject to host permissions. Refresh access or sign in again after
+permission changes.
 
 ## Troubleshooting
 

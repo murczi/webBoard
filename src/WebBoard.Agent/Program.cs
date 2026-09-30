@@ -126,13 +126,13 @@ app.MapGet("/capabilities", async (string kind, string target, AgentOperations o
     if (kind == "Docker") {
         try {
             var container = await docker.GetContainerStatusAsync(target, token);
-            return Results.Ok(container is null ? Array.Empty<string>() : new[] { "start", "stop", "restart" }
-                .Where(operation => operations.Allows("Docker", container.Id, operation) || operations.Allows("Docker", container.Name, operation)).ToArray());
+            return Results.Ok(container is not null && (operations.Allows("Docker", container.Id) || operations.Allows("Docker", container.Name))
+                ? new[] { "start", "stop", "restart" } : Array.Empty<string>());
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException) { return Results.StatusCode(503); }
     }
-    return Results.Ok(kind == "Systemd" ? new[] { "start", "stop", "restart", "enable", "disable" }
-        .Where(operation => operations.Allows("Systemd", target, operation)).ToArray() : Array.Empty<string>());
+    return Results.Ok(kind == "Systemd" && operations.Allows("Systemd", target)
+        ? new[] { "start", "stop", "restart", "enable", "disable" } : Array.Empty<string>());
 });
 app.MapPost("/operations", async (OperationRequest request, AgentOperations operations, IHostApplicationLifetime lifetime) => {
     try {

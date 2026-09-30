@@ -49,13 +49,9 @@ services:
       # Container path to the mounted PFX and its export password.
       Kestrel__Certificates__Default__Path: /tls/agent.pfx
       Kestrel__Certificates__Default__Password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
-      # Operations default to off. Opt in exact targets and individual actions:
-      # Controls__Docker__0__Target: my-game-server
-      # Controls__Docker__0__Operations__0: start
-      # Controls__Docker__0__Operations__1: stop
-      # Controls__Docker__0__Operations__2: restart
-      # Controls__Systemd__0__Target: example.service
-      # Controls__Systemd__0__Operations__0: restart
+      # Operations default to off. Allow exact targets to enable all supported operations:
+      # Controls__Docker__0: my-game-server
+      # Controls__Systemd__0: example.service
       # Enable/disable also require the host polkit setup in README.md.
     # Optional: override to match a dedicated host account for systemd policy.
     # user: "1654:1654"
@@ -111,11 +107,16 @@ services:
 | Docker socket bind mount | Access to host Docker discovery, status, and allowed operations. Socket access grants effective host-root authority to the agent process. |
 | D-Bus/systemd bind mounts | Host system bus and runtime marker used for service queries/controls; host policy still applies. |
 | `read_only` / `bind.create_host_path` | Read-only mounts prevent file writes; `create_host_path: false` rejects missing sources instead of creating directories. A read-only socket mount still allows API calls. |
-| `Controls__Docker__…` / `Controls__Systemd__…` | Optional lists of exact targets and allowed actions; controls stay off until configured. See below. |
+| `Controls__Docker__…` / `Controls__Systemd__…` | Optional lists of exact targets; each target allows all supported operations; controls stay off until configured. See below. |
 
 .NET settings use double underscores between sections and zero-based list
-indices. Add a second target as `Controls__Docker__1__Target`, with its actions
-under `Controls__Docker__1__Operations__0`, and so on.
+indices. Add a second target as `Controls__Docker__1`, and so on.
+
+In JSON, use target string arrays, for example
+`"Controls": { "Docker": ["my-game-server"], "Systemd": ["example.service"] }`.
+When upgrading from per-operation rules, replace `Controls__…__0__Target` with
+`Controls__…__0` and remove the `Operations` entries. Listed targets now allow
+every supported operation.
 
 ## Prepare TLS and start
 
@@ -186,14 +187,13 @@ restart the UI, then remove the old token and restart the agent.
 ## Docker controls
 
 Discovery and monitoring remain available to authenticated callers. Control is
-disabled until configured, separately per operation and exact container name/full ID:
+disabled until an exact container name/full ID is allowed:
 
 ```yaml
-Controls__Docker__0__Target: my-game-server
-Controls__Docker__0__Operations__0: start
-Controls__Docker__0__Operations__1: stop
-Controls__Docker__0__Operations__2: restart
+Controls__Docker__0: my-game-server
 ```
+
+Each allowed container permits start, stop, and restart.
 
 The agent resolves the container, verifies the allowlist, and sends the Engine API
 operation using its full ID. It never starts a shell for Docker controls. The Docker
@@ -208,19 +208,15 @@ execution mode, or arbitrary command configuration is supported. It uses the
 mounted host D-Bus socket for monitoring and service controls. Retain the read-only
 D-Bus/systemd mounts in Compose; host policy decides which queries are permitted.
 
-Service controls are disabled until the exact service and each action are opted in:
+Service controls are disabled until the exact service is allowed:
 
 ```yaml
-Controls__Systemd__0__Target: example.service
-Controls__Systemd__0__Operations__0: start
-Controls__Systemd__0__Operations__1: stop
-Controls__Systemd__0__Operations__2: restart
-Controls__Systemd__0__Operations__3: enable
-Controls__Systemd__0__Operations__4: disable
+Controls__Systemd__0: example.service
 ```
 
-Omit unwanted actions. Discovery does not opt services into operations. These rules
-are checked again on every operation, even if the caller bypasses the UI.
+Each allowed service permits start, stop, restart, enable, and disable, subject to
+host permissions. Discovery does not opt services into operations. The target
+allowlist is checked again on every operation, even if the caller bypasses the UI.
 
 ### One-time host authorization
 
@@ -234,7 +230,7 @@ are checked again on every operation, even if the caller bypasses the UI.
    `/etc/polkit-1/rules.d/50-webboard-agent.rules` (mode 0644). Replace the example
    units/verbs with your services. This grants only those runtime controls.
 4. To support **Enable/Disable**, set `allowUnitFileChanges = true` in that host
-   rule and include the actions in the agent allowlist. This also authorizes
+   rule and include the service in the agent allowlist. This also authorizes
    manager reload, required after unit-file changes.
 5. Restart the Docker agent after changing its allowlist. The host polkit service
    normally reloads rule files automatically. Verify using a disposable service.
@@ -246,7 +242,7 @@ failure; check the host policy and matching UID.
 systemd's unit-file authorization does not expose the target unit to polkit.
 Opting into unit-file changes therefore gives the agent identity broader host
 unit-file access (distribution policy may also imply runtime control and reload); the agent's `Controls:Systemd` list enforces the individual
-service/action restrictions for API callers. Keep this identity dedicated to the
+service restrictions for API callers. Keep this identity dedicated to the
 agent. No privileged container or writable host root mount is required.
 
 Enable/Disable call the host systemd manager through D-Bus and reload it afterward.
@@ -299,4 +295,4 @@ and allowlists. Use `docker compose stop agent` to stop monitoring on this host.
 - **TLS verification fails:** match the certificate SAN to the UI URL and install the issuing CA in the UI trust store.
 - **Docker discovery fails:** check the socket exists and `group_add` matches its numeric host group.
 - **systemd queries or controls fail:** check the mounted host sockets, agent allowlist, matching host UID, and polkit policy. Enable/disable additionally needs the unit-file authorization described above.
-- **Buttons are unavailable:** grant **Modules → Operations**, refresh access, and explicitly allow the target action on the agent.
+- **Buttons are unavailable:** grant **Modules → Operations**, refresh access, and allow the target on the agent.

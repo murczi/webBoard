@@ -5,10 +5,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 
-public sealed class ControlRule {
-    public string Target { get; set; } = "";
-    public string[] Operations { get; set; } = [];
-}
 public sealed record OperationRequest(Guid RequestId, int ModuleId, string Kind, string Target, string Operation);
 public sealed record OperationResult(bool Success, string Message, int? ExitCode = null, string? Output = null, bool TimedOut = false);
 
@@ -62,9 +58,9 @@ public sealed class ProcessRunner : IProcessRunner {
 public sealed class AgentOperations(IConfiguration configuration, DockerSocketClient docker, IProcessRunner process) {
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<Guid, (OperationRequest Request, OperationResult Result)> completed = [];
-    public bool Allows(string kind, string target, string operation) =>
-        (configuration.GetSection($"Controls:{kind}").Get<ControlRule[]>() ?? [])
-        .Any(rule => rule.Target == target && rule.Operations.Contains(operation, StringComparer.Ordinal));
+    public bool Allows(string kind, string target) =>
+        (configuration.GetSection($"Controls:{kind}").Get<string[]>() ?? [])
+        .Contains(target, StringComparer.Ordinal);
 
     public async Task<OperationResult> ExecuteAsync(OperationRequest request, CancellationToken cancellationToken) {
         if (request.RequestId == Guid.Empty || request.ModuleId <= 0) throw new ArgumentException("Invalid operation request.");
@@ -79,14 +75,14 @@ public sealed class AgentOperations(IConfiguration configuration, DockerSocketCl
                 if (request.Operation is not ("start" or "stop" or "restart")) throw new ArgumentException("Unsupported Docker operation.");
                 var container = await docker.GetContainerStatusAsync(request.Target, cancellationToken);
                 if (container is null) return new(false, "Container was not found.");
-                if (!Allows("Docker", container.Id, request.Operation) && !Allows("Docker", container.Name, request.Operation)) throw new UnauthorizedAccessException();
+                if (!Allows("Docker", container.Id) && !Allows("Docker", container.Name)) throw new UnauthorizedAccessException();
                 result = await docker.ControlAsync(container.Id, request.Operation, cancellationToken);
             }
             else if (request.Kind == "Systemd") {
                 if (request.Operation is not ("start" or "stop" or "restart" or "enable" or "disable") ||
                     !Regex.IsMatch(request.Target, @"\A[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,249}\.service\z"))
                     throw new ArgumentException("Invalid service operation.");
-                if (!Allows("Systemd", request.Target, request.Operation)) throw new UnauthorizedAccessException();
+                if (!Allows("Systemd", request.Target)) throw new UnauthorizedAccessException();
                 result = await new SystemdClient(process).ControlAsync(request.Target, request.Operation, cancellationToken);
             }
             else throw new ArgumentException("Unknown operation kind.");

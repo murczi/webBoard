@@ -36,6 +36,21 @@ public sealed class AgentSecurityTests {
         var extra = await client.PostAsJsonAsync("/operations", new { requestId = Guid.NewGuid(), moduleId = 1, kind = "Command", target = "none", operation = "execute", arguments = new[] { "injected" } });
         Assert.Equal(HttpStatusCode.BadRequest, extra.StatusCode);
     }
+    [Fact]
+    public async Task CapabilityDiscoveryReturnsAllOperationsOnlyForAllowedTargets() {
+        await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Testing").ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> {
+                ["Security:Tokens:0"] = Token, ["Controls:Systemd:0"] = "example.service", ["Controls:Systemd:1"] = "second.service"
+            })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        foreach (var target in new[] { "example.service", "second.service" })
+            Assert.Equal(new[] { "start", "stop", "restart", "enable", "disable" },
+                await client.GetFromJsonAsync<string[]>($"/capabilities?kind=Systemd&target={target}"));
+        Assert.Empty((await client.GetFromJsonAsync<string[]>("/capabilities?kind=Systemd&target=other.service"))!);
+        Assert.Empty((await client.GetFromJsonAsync<string[]>("/capabilities?kind=Systemd&target=Example.service"))!);
+        Assert.Empty((await client.GetFromJsonAsync<string[]>("/capabilities?kind=Command&target=example.service"))!);
+    }
     [Theory]
     [InlineData("127.0.0.1", false)] [InlineData("10.0.0.1", true)] [InlineData("169.254.169.254", false)]
     [InlineData("::ffff:169.254.169.254", false)] [InlineData("::1", false)] [InlineData("224.0.0.1", false)]
@@ -45,7 +60,7 @@ public sealed class AgentSecurityTests {
     }
     [Fact]
     public async Task ServiceOperationsSuppressOutputAndDuplicatesAreNotRedispatched() {
-        var configuration = Config(new() { ["Controls:Systemd:0:Target"] = "example.service", ["Controls:Systemd:0:Operations:0"] = "restart" });
+        var configuration = Config(new() { ["Controls:Systemd:0"] = "example.service" });
         using var docker = new DockerSocketClient(configuration);
         var runner = new FakeRunner();
         var operations = new AgentOperations(configuration, docker, runner);

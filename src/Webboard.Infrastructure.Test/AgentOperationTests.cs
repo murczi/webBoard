@@ -6,8 +6,9 @@ using WebBoard.Agent;
 
 public sealed class AgentOperationTests {
     [Theory]
-    [InlineData("start")] [InlineData("stop")] [InlineData("restart")]
-    public async Task DockerControlsUseTheConfiguredTemporarySocket(string operation) {
+    [InlineData("start", "example")] [InlineData("stop", "example")] [InlineData("restart", "example")]
+    [InlineData("start", "012345")] [InlineData("stop", "012345")] [InlineData("restart", "012345")]
+    public async Task AllowedDockerTargetPermitsAllOperationsUsingTheConfiguredSocket(string operation, string allowedTarget) {
         var directory = Path.Combine(Path.GetTempPath(), "webboard-socket-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "docker.sock");
         try {
@@ -15,6 +16,14 @@ public sealed class AgentOperationTests {
             server.Bind(new UnixDomainSocketEndPoint(path)); server.Listen(1);
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var serve = Task.Run(async () => {
+                using (var inspectSocket = await server.AcceptAsync(deadline.Token)) {
+                    using var inspectStream = new NetworkStream(inspectSocket);
+                    using var inspectReader = new StreamReader(inspectStream, Encoding.ASCII, leaveOpen: true);
+                    Assert.Equal("GET /containers/example/json HTTP/1.1", await inspectReader.ReadLineAsync(deadline.Token));
+                    while (!string.IsNullOrEmpty(await inspectReader.ReadLineAsync(deadline.Token))) { }
+                    const string body = "{\"Id\":\"012345\",\"Name\":\"/example\",\"State\":{\"Status\":\"running\",\"Running\":true}}";
+                    await inspectStream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), deadline.Token);
+                }
                 using var socket = await server.AcceptAsync(deadline.Token);
                 using var stream = new NetworkStream(socket);
                 using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
@@ -23,8 +32,12 @@ public sealed class AgentOperationTests {
                 while (!string.IsNullOrEmpty(await reader.ReadLineAsync(deadline.Token))) { }
                 await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), deadline.Token);
             });
-            using var client = new DockerSocketClient(AgentSecurityTests.Config(new() { ["Docker:SocketPath"] = path }));
-            Assert.True((await client.ControlAsync("012345", operation, deadline.Token)).Success);
+            var config = AgentSecurityTests.Config(new() { ["Docker:SocketPath"] = path, ["Controls:Docker:0"] = allowedTarget });
+            using var client = new DockerSocketClient(config);
+            var runner = new CapturingRunner();
+            Assert.True((await new AgentOperations(config, client, runner)
+                .ExecuteAsync(new(Guid.NewGuid(), 1, "Docker", "example", operation), deadline.Token)).Success);
+            Assert.Empty(runner.Calls);
             await serve;
         }
         finally { Directory.Delete(directory, true); }
@@ -32,7 +45,7 @@ public sealed class AgentOperationTests {
     [Theory]
     [InlineData("start")] [InlineData("stop")] [InlineData("restart")]
     public async Task SystemdRuntimeControlsUseFixedArguments(string operation) {
-        var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0:Target"] = "example.service", ["Controls:Systemd:0:Operations:0"] = operation });
+        var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0"] = "example.service" });
         using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
         var operations = new AgentOperations(config, docker, runner);
         Assert.True((await operations.ExecuteAsync(new(Guid.NewGuid(), 1, "Systemd", "example.service", operation), default)).Success);
@@ -69,7 +82,7 @@ public sealed class AgentOperationTests {
     }
     [Fact]
     public async Task ConcurrentOperationsAreRejectedAndFailedExitCodesArePreserved() {
-        var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0:Target"] = "example.service", ["Controls:Systemd:0:Operations:0"] = "restart" });
+        var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0"] = "example.service" });
         using var docker = new DockerSocketClient(config);
         var release = new TaskCompletionSource<OperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var runner = new CapturingRunner { Result = release.Task };
@@ -93,12 +106,25 @@ public sealed class AgentOperationTests {
     }
     [Theory]
     [InlineData("start")] [InlineData("stop")] [InlineData("restart")] [InlineData("enable")] [InlineData("disable")]
-    public async Task EverySystemdOperationRequiresExplicitOptIn(string operation) {
+    public async Task EverySystemdOperationRequiresAnAllowedTarget(string operation) {
         var config = AgentSecurityTests.Config([]);
         using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new AgentOperations(config, docker, runner)
             .ExecuteAsync(new(Guid.NewGuid(), 1, "Systemd", "example.service", operation), default));
         Assert.Empty(runner.Calls);
+    }
+    [Theory]
+    [InlineData("start")] [InlineData("stop")] [InlineData("restart")] [InlineData("enable")] [InlineData("disable")]
+    public async Task AllowedSystemdTargetPermitsEverySupportedOperation(string operation) {
+        var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0"] = "example.service" });
+        using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
+        var operations = new AgentOperations(config, docker, runner);
+        Assert.True((await operations.ExecuteAsync(new(Guid.NewGuid(), 1, "Systemd", "example.service", operation), default)).Success);
+        Assert.NotEmpty(runner.Calls);
+        var calls = runner.Calls.Count;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => operations
+            .ExecuteAsync(new(Guid.NewGuid(), 1, "Systemd", "other.service", operation), default));
+        Assert.Equal(calls, runner.Calls.Count);
     }
     [Fact]
     public async Task FailedProcessReturnsExitCode() {
