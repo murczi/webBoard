@@ -119,11 +119,39 @@ DOCKERFILE
 TRUST
 ```
 
-Change the UI Compose `image` to `webboard-ui:trusted`. Keep its agent URL, token,
-and private-network allowlist configured as in the agent guide. Run migrations
-and start/recreate the UI using that guide. For upgrades, rebuild this derived
-image first, then migrate and recreate the UI; skip `docker compose pull ui` for
-this local image. Pin the `FROM` tag if your deployment uses a pinned release.
+In the UI service of your existing Compose file, change `image` and add
+`pull_policy` alongside it (keep the rest of the service configuration):
+
+```yaml
+services:
+  ui:
+    image: webboard-ui:trusted
+    pull_policy: never
+```
+
+This is a local image, not a Docker Hub repository. Build it on the same Docker
+host that runs the UI. `pull_policy: never` uses the local image and fails if it
+is missing; see [Compose pull policy](https://docs.docker.com/reference/compose-file/services/#pull_policy).
+Keep the agent URL, token, and private-network allowlist configured.
+
+For the complete one-machine stack, prepare the other images with:
+
+```bash
+docker image inspect webboard-ui:trusted >/dev/null && docker compose pull database agent
+```
+
+For UI-only Compose, skip the pull step entirely. Continue with the root or UI
+guide's migration/start commands. Avoid a blanket `docker compose pull` with a
+local UI image; select the published services by name, as in
+[Compose pull](https://docs.docker.com/reference/cli/docker/compose/pull/).
+
+For upgrades, rerun the trust-image build above to download the updated base
+image, then follow the migration/recreation steps. Keep `pull_policy: never` and
+skip `docker compose pull ui`. Pin the `FROM` tag if using a pinned release.
+
+If you see `pull access denied for webboard-ui`, use the selective pull command
+above. `docker login` will not make this local image available in a registry.
+The interrupted database/agent downloads can be retried with that command.
 
 ## Verify and renew
 

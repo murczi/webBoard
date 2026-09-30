@@ -76,9 +76,27 @@ Before starting:
 4. For a deployment without agents, remove the `agent` service and UI `Agents__…`
    fields. Keep the private-network allowlist if you monitor other private targets.
 
+Pull the published images first. If the UI still uses `shujidev/webboard:latest`:
+
+```sh
+docker compose pull database ui agent
+```
+
+If you followed the private-CA recipe and changed the UI to `webboard-ui:trusted`,
+that image exists only on the host where you built it. Use this instead:
+
+```sh
+docker image inspect webboard-ui:trusted >/dev/null && docker compose pull database agent
+```
+
+If inspection fails, complete the [UI trust image build](deploy/docs/agent-tls.md#trust-the-ca-in-the-ui-image)
+on this Docker host before continuing. Do not pull `webboard-ui:trusted` from a
+registry. Omit `agent` from either pull command when it is not deployed.
+
+Then initialize and start:
+
 ```sh
 docker compose config --quiet
-docker compose pull
 docker compose up -d --wait database
 docker compose run --rm --no-deps ui --migrate
 docker compose up -d
@@ -101,10 +119,23 @@ be granted separately, including for the first account, and requires agent allow
 ## Update and stop
 
 Back up PostgreSQL before upgrades. Keep the database credentials, JWT signing
-key, TLS files, tokens, and Compose project name stable. For the one-machine stack:
+key, TLS files, tokens, and Compose project name stable. For the one-machine stack,
+prepare updated images first. For the published UI:
 
 ```sh
 docker compose pull ui agent
+```
+
+For `webboard-ui:trusted`, rerun the [UI trust image build](deploy/docs/agent-tls.md#trust-the-ca-in-the-ui-image)
+to include the updated base image, then pull only the published agent:
+
+```sh
+docker image inspect webboard-ui:trusted >/dev/null && docker compose pull agent
+```
+
+Then apply the upgrade:
+
+```sh
 docker compose stop ui
 docker compose run --rm --no-deps ui --migrate
 docker compose up -d

@@ -94,10 +94,23 @@ follow the [certificate and UI trust recipe](../docs/agent-tls.md) before starti
 
 ## Initialize and start
 
-Start the database first. In the directory containing this Compose file:
+Start the database first. In the directory containing this Compose file, prepare
+the UI image. For the published `shujidev/webboard:latest` image:
 
 ```sh
 docker compose pull ui
+```
+
+For the locally built `webboard-ui:trusted` image, use this instead:
+
+```sh
+docker image inspect webboard-ui:trusted >/dev/null
+```
+
+If it is missing, run the [UI trust image build](../docs/agent-tls.md#trust-the-ca-in-the-ui-image)
+on this Docker host. Do not pull this local image. Then migrate and start:
+
+```sh
 docker compose run --rm --no-deps ui --migrate
 docker compose up -d ui
 docker compose logs -f ui
@@ -133,10 +146,16 @@ Back up the database before pulling an updated image. Preserve the database cred
 key, and configure matching UI/agent tokens, trusted TLS certificates, and the
 allowed private monitoring networks before restarting either component.
 
-On the UI machine, in the directory containing its configured Compose file:
+On the UI machine, prepare the updated image first. For the published UI image:
 
 ```sh
 docker compose pull ui
+```
+
+For `webboard-ui:trusted`, rerun the [UI trust image build](../docs/agent-tls.md#trust-the-ca-in-the-ui-image)
+instead of pulling it. After the pull or rebuild succeeds, stop the UI:
+
+```sh
 docker compose stop ui
 ```
 
