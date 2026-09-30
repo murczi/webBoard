@@ -5,6 +5,7 @@
         ("/Index", "Modules", ModuleAccess.Has(User, ModuleAccess.Read), page is "/Index" or "/ModuleManagement"),
         ("/Hosts", "Hosts", HostAccess.Has(User, HostAccess.Read), page is "/Hosts" or "/HostManagement"),
         ("/Users", "Users", UserAccess.Has(User, UserAccess.Read), page is "/Users" or "/UserManagement"),
+        ("/MonitoringHistory", "Monitoring history", User.HasClaim("access", "MonitoringHistory:read"), page == "/MonitoringHistory"),
         ("/AuditLogs", "Audit log", AuditLogAccess.HasRead(User), page == "/AuditLogs")
     };
 }

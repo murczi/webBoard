@@ -12,6 +12,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_PASSWORD: webboard-ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      WEBBOARD_TEST_DATABASE: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=webboard-ci-only
     steps:
       - uses: actions/checkout@v7
         with:

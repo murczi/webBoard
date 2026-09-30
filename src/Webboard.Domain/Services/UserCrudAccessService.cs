@@ -13,7 +13,8 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
             ["Hosts"] = false,
             ["Modules"] = false,
             ["ModuleTypes"] = true,
-            ["AuditLogs"] = true
+            ["AuditLogs"] = true,
+            ["MonitoringHistory"] = true
         };
 
     public Task<IReadOnlyList<UserSummaryModel>> GetUsersAsync(

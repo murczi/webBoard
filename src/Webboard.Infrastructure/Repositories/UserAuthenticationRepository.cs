@@ -73,8 +73,8 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
             DateUpdated = now
         };
         if (!await dbContext.Users.AnyAsync(cancellationToken)) {
-            foreach (var resource in new[] { "Users", "Hosts", "Modules", "ModuleTypes", "AuditLogs" }) {
-                var readOnly = resource is "ModuleTypes" or "AuditLogs";
+            foreach (var resource in new[] { "Users", "Hosts", "Modules", "ModuleTypes", "AuditLogs", "MonitoringHistory" }) {
+                var readOnly = resource is "ModuleTypes" or "AuditLogs" or "MonitoringHistory";
                 entity.CrudAccess.Add(new UserCrudAccessEntity
                 {
                     Resource = resource,

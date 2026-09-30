@@ -103,6 +103,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         string auditComment,
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await MonitoringInvalidation.LockAsync(dbContext, [module.Id], cancellationToken);
         var updated = await dbContext.Modules
             .Where(entity => entity.Id == module.Id && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
@@ -126,6 +127,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         if (!updated)
             return false;
 
+        await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], cancellationToken);
         AddAuditLog(module.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -138,6 +140,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         string auditComment,
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await MonitoringInvalidation.LockAsync(dbContext, [moduleId], cancellationToken);
         var deleted = await dbContext.Modules
             .Where(module => module.Id == moduleId && !module.DeletionFlag)
             .ExecuteUpdateAsync(
@@ -149,6 +152,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         if (!deleted)
             return false;
 
+        await MonitoringInvalidation.InvalidateAsync(dbContext, [moduleId], cancellationToken);
         AddAuditLog(moduleId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

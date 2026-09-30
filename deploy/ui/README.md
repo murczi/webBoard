@@ -88,9 +88,62 @@ For controlled upgrades, replace `latest` with a numbered tag such as `1.2`
 and use the same commands. Database changes may prevent rolling back an older
 image without restoring a compatible database backup.
 
-## Authenticated agents and outbound connections
+## Background monitoring and history
 
-Configure `Agents__0__BaseUrl`, `Agents__0__Token`, and
-`Outbound__AllowedPrivateNetworks__0` for each private agent. Use trusted HTTPS
-certificates. See the [agent security guide](../agent/README.md) for TLS setup,
-key rotation, and the explicit encrypted-tunnel HTTP exception.
+Monitoring starts with the UI process and runs without dashboard viewers. Configure:
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `Monitoring__Enabled` | `true` | Enables this instance's collector; reads/history still work when false. |
+| `Monitoring__IntervalSeconds` | `30` | Minimum interval per enabled module (5–86400 seconds). |
+| `Monitoring__TimeoutSeconds` | `5` | Overall check deadline, at most the interval. |
+| `Monitoring__StaleSeconds` | `90` | Freshness duration; at least interval plus timeout, at most 7 days. |
+| `Monitoring__MaxConcurrency` | `8` | Maximum simultaneous checks per UI instance (1–64). |
+| `Monitoring__RetentionDays` | `30` | History retention (1–3650 days). |
+| `Outbound__AllowedPrivateNetworks__0` | none | Explicit private/loopback CIDR permitted for monitoring, e.g. `10.0.0.0/24`. Add numbered entries as needed. |
+| `Agents__0__BaseUrl` | none | Exact configured agent base URL. |
+| `Agents__0__Token` | none | Its matching secret bearer token, at least 32 characters. |
+| `Agents__0__AllowHttpOverEncryptedTransport` | `false` | Opt-in HTTP exception only over an encrypted VPN/tunnel. |
+
+Agent-free deployments should remove all `Agents__…` entries. HTTP, Minecraft, and
+Steam checks do not require an agent. Private targets still require the outbound
+CIDR configuration. Redirects are not followed, metadata/link-local/multicast targets
+are rejected, and DNS results are checked at connection time. No credentials are
+sent by HTTP module health checks. Management URLs remain ordinary browser links.
+
+For private-CA agent certificates, build a derived image with the CA installed:
+
+```dockerfile
+FROM shujidev/webboard:latest
+USER root
+COPY agent-ca.crt /usr/local/share/ca-certificates/agent-ca.crt
+RUN update-ca-certificates
+USER $APP_UID
+```
+
+Use identical monitoring settings on all UI replicas. PostgreSQL advisory locks
+coordinate each module so replicas cannot produce duplicate concurrent results.
+Locks span the network check and its persistence transaction; size the PostgreSQL
+connection pool for configured concurrency plus interactive requests. Poolers must
+support transactions spanning these commands. No Redis, external scheduler, or
+SignalR deployment is required. Individual failures are stored without stopping
+the collector. On shutdown, checks are canceled without recording false outages.
+
+Results and the latest-result projection are separate from audit events. Cleanup
+runs hourly, deletes expired samples in 10,000-row transactions, and retains the
+latest projection. Expired latest results are shown as Unknown, including the last
+observation timestamp. No-data periods and Not configured states are distinct from
+failed checks. Configuration changes invalidate current results immediately.
+
+The dashboard polls every 15 seconds; history polls every 30 seconds. Hidden tabs
+pause requests. History has hour/day/week/custom ranges, a shared axis, per-account
+local browser visibility, and backward/forward navigation. Canvas rows load when
+near the viewport; bounded server queries merge observations before returning
+blocks. Hover, click/tap, or use arrow keys on a timeline to inspect a period. All
+stored timestamps are UTC; controls and labels use the browser timezone. Custom
+ranges are limited to ten years, with periods outside retention shown as Unknown.
+History visibility changes do not change monitoring configuration.
+
+Existing module readers receive `MonitoringHistory:read` during migration. Users
+must Refresh access or sign in again to load that grant. Stop all UI replicas and
+run `--migrate` once before restarting them.

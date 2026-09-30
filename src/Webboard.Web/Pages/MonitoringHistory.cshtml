@@ -1,0 +1,36 @@
+@page
+@model MonitoringHistoryModel
+@{ ViewData["Title"] = "Monitoring history"; ViewData["FullWidth"] = true; }
+<link rel="stylesheet" href="~/css/monitoring-history.css" asp-append-version="true" />
+<h1 class="h2">Monitoring history</h1>
+<p class="text-muted">Availability across your modules. History is retained for @Model.RetentionDays days. Gaps mean no fresh observation was available.</p>
+<div id="monitoring-history" data-account="@Model.Account" data-stale-seconds="@Model.StaleSeconds">
+    <form id="history-range" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+        <div><label for="history-preset" class="form-label">Time range</label><select id="history-preset" class="form-select"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="custom">Custom</option></select></div>
+        <div><label for="history-from" class="form-label">From</label><input id="history-from" type="datetime-local" class="form-control" required /></div>
+        <div><label for="history-until" class="form-label">Until</label><input id="history-until" type="datetime-local" class="form-control" required /></div>
+        <button class="btn btn-primary">Apply</button>
+        <button type="button" class="btn btn-outline-secondary" id="history-back">← Previous</button>
+        <button type="button" class="btn btn-outline-secondary" id="history-forward">Next →</button>
+    </form>
+    <p id="history-timezone" class="small text-muted"></p>
+    <div class="history-legend mb-3"><span class="state-1">Healthy</span><span class="state-2">Unhealthy</span><span class="state-3">Unknown / missing</span><span class="state-0">Not configured</span></div>
+    <details class="mb-3"><summary>Module visibility</summary>
+        <button type="button" id="history-show" class="btn btn-sm btn-outline-secondary my-2">Show all</button>
+        <button type="button" id="history-hide" class="btn btn-sm btn-outline-secondary my-2">Hide all</button>
+        <div class="d-flex flex-wrap gap-3">
+        @foreach (var module in Model.Modules) { <label><input type="checkbox" data-history-toggle="@module.Id" checked /> @module.Name</label> }
+        </div>
+    </details>
+    <p id="history-feedback" class="small" role="status"></p>
+    <div class="history-scroll">
+        <div class="history-axis-row"><span>Module</span><div id="history-axis" class="history-axis"></div><span>Latest state</span></div>
+        @foreach (var module in Model.Modules) {
+            <div class="history-row" data-history-module="@module.Id" data-name="@module.Name" data-enabled="@module.IsEnabled.ToString().ToLowerInvariant()">
+                <span class="history-name">@module.Name</span><div class="history-track" aria-label="Availability for @module.Name"></div><span class="history-current small">@(module.IsEnabled ? "Unknown" : "Disabled")</span>
+            </div>
+        }
+    </div>
+    <div id="history-detail" class="card p-3 mt-3" role="status">Select a timeline block to see its period and duration.</div>
+</div>
+@section Scripts { <script src="~/js/monitoring-history.js" asp-append-version="true"></script> }

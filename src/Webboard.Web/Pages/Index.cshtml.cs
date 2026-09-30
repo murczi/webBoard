@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 [Authorize]
 public class IndexModel(
     IModuleManagementService modules,
-    IModuleHealthChecker healthChecker,
+    IMonitoringReader monitoring,
     IAuditLogService auditLogs,
     JwtSessionService sessions) : PageModel {
     public IReadOnlyList<ModuleTileModel> ModuleTiles { get; private set; } = [];
@@ -30,13 +30,18 @@ public class IndexModel(
 
         if (CanRead) {
             var enabled = allModules.Where(module => module.IsEnabled).ToList();
-            var checks = enabled.Select(async module => new ModuleTileModel(
-                module,
-                await healthChecker.CheckAsync(module, cancellationToken)));
-            ModuleTiles = await Task.WhenAll(checks);
+            var statuses = (await monitoring.LatestAsync(cancellationToken)).ToDictionary(x => x.ModuleId);
+            ModuleTiles = enabled.Select(module => new ModuleTileModel(module,
+                statuses.TryGetValue(module.Id, out var status) ? status.Health : new(ModuleHealthState.Unknown, null, "Awaiting monitoring data"))).ToList();
         }
 
 
+    }
+
+    public async Task<IActionResult> OnGetStatusAsync(CancellationToken cancellationToken) {
+        if (!CanRead) return Forbid();
+        Response.Headers.CacheControl = "no-store";
+        return new JsonResult(await monitoring.LatestAsync(cancellationToken));
     }
 
     public async Task<IActionResult> OnPostRefreshAccessAsync(

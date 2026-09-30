@@ -65,11 +65,10 @@ else {
                     <h2 class="h5 mb-2 text-break">@tile.Module.Name</h2>
                     <div class="module-health module-health-feedback mb-2">
                         <span class="module-health-dot @dotClass" aria-hidden="true"></span>
-                        <span class="small fw-semibold">@tile.Health.Message</span>
+                        <span class="small fw-semibold" data-health-message>@tile.Health.Message</span>
                     </div>
-                    @if (tile.Health.PingMilliseconds.HasValue) {
-                        <span class="small text-muted mb-2">Response time: @tile.Health.PingMilliseconds ms</span>
-                    }
+                    <span class="small text-muted mb-2" data-health-latency>@(tile.Health.PingMilliseconds.HasValue ? $"Response time: {tile.Health.PingMilliseconds} ms" : "")</span>
+                    <span class="small text-muted" data-health-time></span>
 
                     <details data-steam-details hidden="@(tile.Health.Steam is null)"><summary>Game server details</summary><pre class="small text-wrap" data-steam-info>@(tile.Health.Steam is { } steam ? $"{steam.Game} · {steam.Version}\n{steam.Name} · {steam.Map}\n{steam.Players}/{steam.MaxPlayers} players" : "")</pre></details>
                     <p class="text-muted module-description @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "fst-italic" : "")">
@@ -100,6 +99,8 @@ else {
     </div>
 }
 
+<p id="dashboard-refresh-status" class="text-muted small mt-3" role="status"></p>
 @section Scripts {
+    <script src="~/js/dashboard-refresh.js" asp-append-version="true"></script>
     <script src="~/js/module-order.js" asp-append-version="true"></script>
 }

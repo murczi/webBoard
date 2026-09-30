@@ -33,6 +33,8 @@ services:
       Agents__0__BaseUrl: https://agent:8443 # Certificate must include agent in its SANs
       Agents__0__Token: "" # Match Security__Tokens__0 on the agent
       Outbound__AllowedPrivateNetworks__0: 172.16.0.0/12 # Narrow to your actual Docker subnet
+      Monitoring__IntervalSeconds: 30
+      Monitoring__RetentionDays: 30
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

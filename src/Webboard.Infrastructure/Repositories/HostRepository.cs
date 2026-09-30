@@ -65,6 +65,8 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         string auditComment,
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag).Select(x => x.Id).ToListAsync(cancellationToken);
+        await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
         var updated = await dbContext.Hosts
             .Where(entity => entity.Id == host.Id && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
@@ -76,6 +78,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!updated)
             return false;
 
+        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
         AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -88,6 +91,8 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         string auditComment,
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var dependentModules = await dbContext.Modules.Where(x => x.HostId == hostId && !x.DeletionFlag).Select(x => x.Id).ToListAsync(cancellationToken);
+        await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
         var deleted = await dbContext.Hosts
             .Where(host => host.Id == hostId && !host.DeletionFlag)
             .ExecuteUpdateAsync(
@@ -98,6 +103,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!deleted)
             return false;
 
+        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
         AddAuditLog(hostId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

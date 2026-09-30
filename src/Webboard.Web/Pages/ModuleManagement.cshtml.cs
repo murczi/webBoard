@@ -265,7 +265,7 @@ public class ModuleManagementModel(
         [Display(Name = "Management URL")]
         public string? ManagementUrl { get; set; }
 
-        [Display(Name = "Show on dashboard")]
+        [Display(Name = "Enabled (monitor and show on dashboard)")]
         public bool IsEnabled { get; set; } = true;
 
         public ModuleModel ToModel() => new()

@@ -11,5 +11,7 @@ services:
       Agents__0__BaseUrl: https://agent.example.com:5081
       Agents__0__Token: "" # Match the remote agent's Security__Tokens__0
       Outbound__AllowedPrivateNetworks__0: 10.0.0.0/24 # Replace with your actual monitored subnet
+      Monitoring__IntervalSeconds: 30
+      Monitoring__RetentionDays: 30
     ports:
       - "127.0.0.1:8080:8080"

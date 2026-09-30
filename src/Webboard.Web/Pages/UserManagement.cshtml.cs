@@ -135,7 +135,7 @@ public class UserManagementModel(
         RetryUserName = Users.FirstOrDefault(user => user.Id == userId)?.Name;
         RetryUserId = RetryUserName is null ? null : userId;
         foreach (var item in Access)
-            item.IsReadOnlyResource = item.Resource is "AuditLogs" or "ModuleTypes";
+            item.IsReadOnlyResource = item.Resource is "AuditLogs" or "ModuleTypes" or "MonitoringHistory";
         return Page();
     }
 

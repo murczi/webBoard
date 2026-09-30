@@ -34,6 +34,12 @@ if (args.Contains("--migrate")) {
 
 // Add services to the container.
 Webboard.Web.Security.OutboundSecurityValidation.Validate(builder.Configuration);
+var monitoringOptions = builder.Configuration.GetSection("Monitoring").Get<Webboard.Domain.Model.Monitoring.MonitoringOptions>() ?? new();
+monitoringOptions.Validate();
+builder.Services.AddSingleton(monitoringOptions);
+builder.Services.AddScoped<IMonitoringCollector, MonitoringCollector>();
+builder.Services.AddScoped<IMonitoringReader, MonitoringReader>();
+builder.Services.AddHostedService<Webboard.Web.Services.MonitoringWorker>();
 builder.Services.AddDbContext<WebboardDbContext>(optionsAction: options =>
     options.UseNpgsql(
     builder.Configuration.GetConnectionString("WebboardDatabase")

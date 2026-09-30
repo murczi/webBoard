@@ -334,3 +334,18 @@ supports Source A2S_INFO with challenges and split/BZip2 responses. Legacy GoldS
 info packets and unusual pre-Orange-Box split layouts are reported as incompatible;
 other modules continue monitoring normally. BZip2 decoding uses
 [SharpZipLib](https://github.com/icsharpcode/SharpZipLib).
+
+## Background monitoring and history
+
+Monitoring results are separate from configuration/execution audit events. The
+dashboard and history page poll persisted results while visible, without launching
+health checks. History uses proportional blocks with explicit unknown gaps, a
+shared time range, per-account browser visibility, and keyboard/touch inspection.
+Disabled modules retain history but are not checked. Changing a module/host
+configuration invalidates its current result and starts a gap until the next check.
+
+Run `dotnet test Webboard.slnx` with `WEBBOARD_TEST_DATABASE` pointing at an isolated
+PostgreSQL server with CREATE DATABASE permission. Tests create/drop only uniquely
+named test databases. CI now runs these integration tests. Agent tests use test
+servers, fake process runners, a temporary Unix socket, and controlled child processes;
+they must never target a real Docker socket or service manager.

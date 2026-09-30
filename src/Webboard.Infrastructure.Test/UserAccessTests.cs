@@ -135,7 +135,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var second = await Register("second");
         await using var db = Context();
         var grants = await db.UserCrudAccess.Where(x => x.UserId == first).ToListAsync();
-        Assert.Equal(5, grants.Count);
+        Assert.Equal(6, grants.Count);
         Assert.All(grants, grant => {
             Assert.True(grant.CanRead);
             var writable = grant.Resource is "Users" or "Hosts" or "Modules";
@@ -152,7 +152,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         await using var db = Context();
         Assert.Equal(8, await db.Users.CountAsync());
         Assert.Equal(1, await db.UserCrudAccess.Select(x => x.UserId).Distinct().CountAsync());
-        Assert.Equal(5, await db.UserCrudAccess.CountAsync());
+        Assert.Equal(6, await db.UserCrudAccess.CountAsync());
     }
 
     [PostgresFact]
@@ -179,7 +179,8 @@ public sealed class UserAccessTests : IAsyncLifetime {
             new() { Resource = "Hosts", CanCreate = true },
             new() { Resource = "Modules", CanDelete = true },
             new() { Resource = "ModuleTypes", CanRead = true, CanUpdate = true },
-            new() { Resource = "AuditLogs", CanRead = true, CanDelete = true }
+            new() { Resource = "AuditLogs", CanRead = true, CanDelete = true },
+            new() { Resource = "MonitoringHistory", CanRead = true, CanUpdate = true }
         ], admin, "Grant access");
         var grants = await service.GetAccessAsync(user);
         Assert.All(grants, grant => Assert.True(grant.CanRead));
