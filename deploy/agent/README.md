@@ -262,6 +262,39 @@ allowlist is checked again on every operation, even if the caller bypasses the U
 
 ### One-time host authorization
 
+The guided installer offers optional start/stop/restart controls for exact service
+names. If selected, it writes matching agent allowlist entries and installs
+`/etc/polkit-1/rules.d/50-webboard-agent-installer.rules` as root (mode 0644).
+Polkit is installed automatically if missing on Ubuntu/Debian; on other hosts,
+install your distribution's polkit package first. The rule grants only the listed
+runtime actions to the dedicated `webboard-agent` account. It does not grant
+unit-file changes or daemon reload.
+
+For an existing deployment with missing host permissions, download the current
+installer and run on the **agent host**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/murczi/webBoard/main/deploy/install.sh -o webboard-install.sh
+bash webboard-install.sh --authorize-systemd frpc.service
+```
+
+Repeat `--authorize-systemd` in the same command for each additional service.
+Each invocation replaces the installer-managed runtime service list, so include
+every service you want to keep authorized. The command preserves existing Compose
+files, secrets, and running containers. It prints the host account's UID/GID and
+the `Controls__Systemd__…` entries; ensure your existing agent uses those values,
+then run `docker compose up -d agent` from its deployment directory if you changed
+Compose. Host polkit normally reloads rules automatically. No service is started,
+stopped, or restarted by the authorization command.
+
+The installer refuses to overwrite an unmanaged file or symlink at its policy
+path and preserves separately installed manual rules. Host accounts and polkit
+rules are retained on uninstall; remove them manually only when no deployment
+needs them. For a tunnel service such as `frpc.service`, stop/restart can interrupt
+your connection; verify authorization with a disposable service first.
+
+For manual installation or enable/disable support:
+
 1. Install the host distribution's polkit package if it is not already installed.
 2. Use the dedicated `webboard-agent` host account from the
    [monitoring setup](#host-account-for-systemd-monitoring). The guided installer
@@ -271,7 +304,8 @@ allowlist is checked again on every operation, even if the caller bypasses the U
    units/verbs with your services. This grants only those runtime controls.
 4. To support **Enable/Disable**, set `allowUnitFileChanges = true` in that host
    rule and include the service in the agent allowlist. This also authorizes
-   manager reload, required after unit-file changes.
+   manager reload, required after unit-file changes. The installer-managed runtime
+   rule intentionally does not grant these broader permissions.
 5. Restart the Docker agent after changing its allowlist. The host polkit service
    normally reloads rule files automatically. Verify using a disposable service.
 
@@ -337,3 +371,4 @@ and allowlists. Use `docker compose stop agent` to stop monitoring on this host.
 - **systemd discovery reports `Transport endpoint is not connected`:** if `docker compose exec --user 0 agent busctl --system list` succeeds while the default-user query fails, check the host account and container UID using the [monitoring setup](#host-account-for-systemd-monitoring). A UID without a host account can be rejected by D-Bus.
 - **systemd queries or controls fail:** check the mounted host sockets and matching host UID. Controls additionally require the agent allowlist and polkit policy; enable/disable needs the unit-file authorization described above.
 - **Buttons are unavailable:** grant **Modules → Operations**, refresh access, and allow the target on the agent.
+- **Stop/restart fail after adding a systemd allowlist entry:** the allowlist does not grant host permissions. Use `--authorize-systemd` on the agent host or install the manual polkit rule described above. Confirm that the container UID matches the host `webboard-agent` account.

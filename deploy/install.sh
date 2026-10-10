@@ -8,6 +8,7 @@ fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
 Usage: bash install.sh [--components db,ui,agent] [--directory PATH] [--port PORT] [--resume]
+       bash install.sh --authorize-systemd SERVICE [--authorize-systemd SERVICE ...]
 
 Choose db, ui, agent, or any comma-separated combination to install on this host.
 Prompts for existing services when dependent components are installed elsewhere.
@@ -19,6 +20,9 @@ Other hosts require Bash, OpenSSL, Docker Engine, and Compose with up --wait.
   --directory PATH  Deployment directory (default: $HOME/webboard)
   --port PORT       Loopback HTTP upstream port (default: 8080)
   --resume          Retry a generated installation without changing its secrets
+  --authorize-systemd SERVICE
+                    Install host start/stop/restart policy for an existing agent
+                    Repeat for each service; replaces the installer-managed list
   -h, --help        Show this help
 
 Public HTTPS requires DNS pointing at this host and reachable ports 80/443.
@@ -96,6 +100,68 @@ prepare_agent_account() {
         *) fail 'The existing webboard-agent host account must have a non-login shell; refusing to use a login account.';;
     esac
 }
+valid_systemd_service() {
+    local pattern='^[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,249}\.service$'
+    [[ ${#1} -le 256 && "$1" =~ $pattern ]]
+}
+ensure_polkit() {
+    command -v pkcheck >/dev/null && return
+    [[ -r /etc/os-release ]] || fail 'Install the host polkit package before enabling systemd controls.'
+    # shellcheck disable=SC1091
+    local ID
+    . /etc/os-release
+    [[ "$ID" == ubuntu || "$ID" == debian ]] || fail 'Install the host polkit package before enabling systemd controls.'
+    printf 'Installing polkit for systemd controls.\n'
+    root_command apt-get update
+    local package=polkitd
+    apt_has_candidate "$package" || package=policykit-1
+    root_command apt-get install -y "$package"
+    command -v pkcheck >/dev/null || fail 'polkit installation did not provide pkcheck.'
+}
+install_systemd_policy() (
+    # Only the named services' runtime verbs are granted. Unit-file changes and
+    # daemon reload require the separate, broader manual authorization recipe.
+    local service policy_temp policy_path=/etc/polkit-1/rules.d/50-webboard-agent-installer.rules
+    local marker='// Managed by webBoard installer: systemd runtime controls.'
+    (($# > 0)) || fail 'Specify at least one systemd service to authorize.'
+    for service in "$@"; do valid_systemd_service "$service" || fail "Invalid systemd service: $service"; done
+    if ((EUID != 0)); then command -v sudo >/dev/null || fail 'sudo is required to install systemd control policy.'; fi
+    ensure_polkit
+    root_command test -d /etc/polkit-1/rules.d || fail 'The host polkit rules directory is missing; install polkit with JavaScript rule support.'
+    if root_command test -L "$policy_path"; then fail 'Refusing to replace a symlinked systemd control policy.'; fi
+    if root_command test -e "$policy_path"; then
+        root_command test -f "$policy_path" &&
+            [[ $(root_command head -n 1 "$policy_path") == "$marker" ]] || fail 'A different systemd control policy exists at the installer path; preserve it and configure permissions manually.'
+    fi
+    policy_temp=$(mktemp)
+    trap 'rm -f -- "$policy_temp"' EXIT
+    {
+        printf '%s\n' "$marker"
+        cat <<'RULE'
+polkit.addRule(function(action, subject) {
+    if (subject.user !== 'webboard-agent') return;
+RULE
+        printf '    var units = ['
+        local separator=''
+        for service in "$@"; do
+            # Unit names may contain literal backslashes (systemd escaped names).
+            printf "%s'%s'" "$separator" "${service//\\/\\\\}"
+            separator=', '
+        done
+        cat <<'RULE'
+];
+    var verbs = ['start', 'stop', 'restart'];
+    if (action.id === 'org.freedesktop.systemd1.manage-units' &&
+        units.indexOf(action.lookup('unit')) >= 0 &&
+        verbs.indexOf(action.lookup('verb')) >= 0) {
+        return polkit.Result.YES;
+    }
+});
+RULE
+    } > "$policy_temp"
+    root_command install -o 0 -g 0 -m 0644 "$policy_temp" "$policy_path" || fail 'Could not install the systemd control policy.'
+    printf 'Installed host start/stop/restart policy for: %s\n' "$*"
+)
 install_prerequisites() {
     [[ -r /etc/os-release ]] || fail 'Install Docker and OpenSSL using your OS package manager first.'
     # shellcheck disable=SC1091
@@ -297,16 +363,29 @@ directory_given=false
 port_given=false
 components_given=false
 components=''
+authorized_systemd_targets=()
 while (($#)); do
     case "$1" in
         --directory) (($# >= 2)) && [[ -n "$2" ]] || fail '--directory requires a path'; deployment_dir=$2; directory_given=true; shift 2;;
         --port) (($# >= 2)) || fail '--port requires a number'; ui_port=$2; port_given=true; shift 2;;
         --components) (($# >= 2)) && [[ -n "$2" ]] || fail '--components requires a comma-separated list'; components=$2; components_given=true; shift 2;;
         --resume) resume=true; shift;;
+        --authorize-systemd) (($# >= 2)) && valid_systemd_service "$2" || fail '--authorize-systemd requires an exact .service name'; authorized_systemd_targets+=("$2"); shift 2;;
         -h|--help) usage; exit 0;;
         *) fail "Unknown option: $1 (use --help)";;
     esac
 done
+if ((${#authorized_systemd_targets[@]})); then
+    ! $resume && ! $components_given && ! $directory_given && ! $port_given || fail '--authorize-systemd only configures host policy; do not combine it with installation options.'
+    prepare_agent_account
+    install_systemd_policy "${authorized_systemd_targets[@]}"
+    printf 'Ensure the existing agent uses user: "%s:%s" and these environment entries:\n' "$agent_uid" "$agent_gid"
+    for ((i=0; i<${#authorized_systemd_targets[@]}; i++)); do
+        printf '  Controls__Systemd__%s: %s\n' "$i" "${authorized_systemd_targets[i]}"
+    done
+    printf 'Apply any Compose changes with docker compose up -d agent. Existing configuration, secrets, and containers were preserved.\n'
+    exit 0
+fi
 valid_port "$ui_port" || fail 'Port must be between 1 and 65535'
 install_database=false
 install_ui=false
@@ -469,6 +548,7 @@ fi
 monitor_docker=false
 monitor_systemd=false
 docker_targets=()
+systemd_targets=()
 agent_token=''
 agent_publish=false
 agent_bind=127.0.0.1
@@ -486,7 +566,17 @@ if $install_agent; then
             docker_targets+=("$target")
         done
     fi
-    if [[ -S /run/dbus/system_bus_socket && -d /run/systemd/system ]] && yesno 'Enable systemd monitoring (creates/reuses a non-login host account; service controls stay disabled)' y; then monitor_systemd=true; fi
+    if [[ -S /run/dbus/system_bus_socket && -d /run/systemd/system ]] && yesno 'Enable systemd monitoring (creates/reuses a non-login host account)' y; then
+        monitor_systemd=true
+        if yesno 'Enable systemd start/stop/restart controls (installs host polkit policy)' n; then
+            while true; do
+                ask target 'Exact systemd service to allow start/stop/restart (blank finishes)' ''
+                [[ -n "$target" ]] || break
+                valid_systemd_service "$target" || { printf 'Enter an exact service name such as frpc.service.\n'; continue; }
+                systemd_targets+=("$target")
+            done
+        fi
+    fi
     $monitor_docker || $monitor_systemd || fail 'No host monitoring source selected or available.'
     ask_secret agent_token 'Existing agent token (blank generates a new token)'
     [[ -z "$agent_token" ]] || valid_token "$agent_token" || fail 'Agent tokens require at least 32 characters and no whitespace.'
@@ -564,6 +654,7 @@ if $agent_publish; then
     fi
 fi
 if $monitor_systemd; then prepare_agent_account; fi
+if ((${#systemd_targets[@]})); then install_systemd_policy "${systemd_targets[@]}"; fi
 printf '\nInstalling components: %s in %s\n' "$components" "$deployment_dir"
 
 on_error() {
@@ -731,6 +822,7 @@ COMPOSE
     env_field Kestrel__Certificates__Default__Path /tls/agent.pfx >> compose.yaml
     env_field Kestrel__Certificates__Default__Password "$pfx_password" >> compose.yaml
     for ((i=0; i<${#docker_targets[@]}; i++)); do env_field "Controls__Docker__${i}" "${docker_targets[i]}" >> compose.yaml; done
+    for ((i=0; i<${#systemd_targets[@]}; i++)); do env_field "Controls__Systemd__${i}" "${systemd_targets[i]}" >> compose.yaml; done
     if $monitor_systemd; then printf '    user: "%s:%s"\n' "$agent_uid" "$agent_gid" >> compose.yaml; fi
     if $agent_publish; then printf '    ports:\n      - "%s:%s:8443"\n' "$agent_bind" "$agent_port" >> compose.yaml; fi
     if $monitor_docker; then printf '    group_add:\n      - "%s"\n' "$docker_gid" >> compose.yaml; fi
@@ -978,7 +1070,12 @@ STEPS
 fi
 if $install_agent; then
     if $monitor_systemd; then
-        printf 'Systemd monitoring uses host account webboard-agent (%s:%s). This account is retained on uninstall; controls require host polkit policy.\n' "$agent_uid" "$agent_gid" >> NEXT-STEPS.txt
+        printf 'Systemd monitoring uses host account webboard-agent (%s:%s). This account and installed host policies are retained on uninstall.\n' "$agent_uid" "$agent_gid" >> NEXT-STEPS.txt
+        if ((${#systemd_targets[@]})); then
+            printf 'Host start/stop/restart authorization configured for: %s. Enable/disable require the manual unit-file policy.\n' "${systemd_targets[*]}" >> NEXT-STEPS.txt
+        else
+            printf 'Systemd controls were not configured. Use install.sh --authorize-systemd SERVICE and add the matching agent allowlist entry.\n' >> NEXT-STEPS.txt
+        fi
     fi
     exported_agent_url=https://agent:8443
     if $agent_publish; then exported_agent_url="https://$agent_host:$agent_port"; fi

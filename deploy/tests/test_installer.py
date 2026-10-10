@@ -82,6 +82,26 @@ else:
     raise SystemExit('Unexpected account command: ' + repr([command] + args))
 '''
 
+MOCK_INSTALL = r'''#!/usr/bin/env python3
+import json, os, pathlib, subprocess, sys
+args = sys.argv[1:]
+destination = pathlib.Path(args[-1])
+if destination.parent != pathlib.Path(os.environ['MOCK_POLICY_DIR']):
+    raise SystemExit('Unexpected privileged install destination: ' + str(destination))
+with open(os.environ['MOCK_POLICY_LOG'], 'a') as log:
+    log.write(json.dumps(args) + '\n')
+if os.environ.get('MOCK_POLICY_INSTALL_FAIL') == '1': sys.exit(42)
+# Record root ownership requirements but do not chown anything on the test host.
+filtered = []
+index = 0
+while index < len(args):
+    if args[index] in ('-o', '-g'): index += 2
+    else:
+        filtered.append(args[index])
+        index += 1
+sys.exit(subprocess.call(['/usr/bin/install'] + filtered))
+'''
+
 @unittest.skipUnless(DOCKER and shutil.which('openssl'), 'Docker Compose and OpenSSL required')
 class InstallerTests(unittest.TestCase):
     @classmethod
@@ -99,6 +119,13 @@ class InstallerTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.deploy = self.root / 'deployment with spaces'
+        self.policy_dir = self.root / 'polkit-rules'
+        self.policy_dir.mkdir()
+        self.policy_path = self.policy_dir / '50-webboard-agent-installer.rules'
+        # Redirect policy paths in a test copy, including when tests run as root.
+        # No test should ever read or write the real host's polkit rules.
+        self.installer = self.root / 'install.sh'
+        self.installer.write_text(INSTALLER.read_text().replace('/etc/polkit-1/rules.d', str(self.policy_dir)))
         bin_dir = self.root / 'bin'
         bin_dir.mkdir()
         mock = bin_dir / 'docker'
@@ -111,7 +138,8 @@ class InstallerTests(unittest.TestCase):
                         MOCK_LOG=str(self.root / 'log'), MOCK_NETWORK=str(self.root / 'network'),
                         MOCK_FAIL=str(self.root / 'fail'), MOCK_CA=str(self.ca), REAL_DOCKER=DOCKER)
         self.env.update(MOCK_ACCOUNT_FILE=str(self.root / 'account'),
-                        MOCK_ACCOUNT_LOG=str(self.root / 'account-log'))
+                        MOCK_ACCOUNT_LOG=str(self.root / 'account-log'),
+                        MOCK_POLICY_DIR=str(self.policy_dir), MOCK_POLICY_LOG=str(self.root / 'policy-log'))
         for name in ('getent', 'useradd'):
             mock = bin_dir / name
             mock.write_text(MOCK_ACCOUNT)
@@ -119,12 +147,18 @@ class InstallerTests(unittest.TestCase):
         sudo = bin_dir / 'sudo'
         sudo.write_text('#!/usr/bin/env bash\nexec "$@"\n')
         sudo.chmod(0o755)
+        install = bin_dir / 'install'
+        install.write_text(MOCK_INSTALL)
+        install.chmod(0o755)
+        pkcheck = bin_dir / 'pkcheck'
+        pkcheck.write_text('#!/usr/bin/env bash\nexit 0\n')
+        pkcheck.chmod(0o755)
         # Keep inherited Compose settings from influencing validation/deployment.
         for key in ('COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'COMPOSE_PROFILES'):
             self.env.pop(key, None)
 
     def run_installer(self, answers='', *options):
-        return subprocess.run(['bash', str(INSTALLER), '--directory', str(self.deploy),
+        return subprocess.run(['bash', str(self.installer), '--directory', str(self.deploy),
                                '--port', '8088', *options], input=answers, text=True,
                               capture_output=True, env=self.env, timeout=60)
 
@@ -148,7 +182,7 @@ class InstallerTests(unittest.TestCase):
     def answers(self, components='db,ui', *, https='existing', bind='127.0.0.1',
                 browser='', https_port='443', db_ca='', password='external password',
                 remote=None, private='', token='', db_publish=False, agent_publish=False,
-                systemd=False):
+                systemd=False, systemd_controls=()):
         chosen = set(components.lower().replace(' ', '').split(','))
         db = 'db' in chosen or 'database' in chosen
         ui, agent = 'ui' in chosen, 'agent' in chosen
@@ -165,7 +199,11 @@ class InstallerTests(unittest.TestCase):
             elif https == 'public': values += [browser or 'board.example.org', 'y']
         if agent:
             if Path('/var/run/docker.sock').is_socket(): values += ['y', 'my-server', '']
-            if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir(): values += ['y' if systemd else 'n']
+            if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir():
+                values += ['y' if systemd else 'n']
+                if systemd:
+                    values += ['y' if systemd_controls else 'n']
+                    if systemd_controls: values += [*systemd_controls, '']
             values += [token]
             if ui: values += ['y' if agent_publish else 'n']
             if not ui or agent_publish: values += ['192.168.1.30', '5081', 'agent.internal']
@@ -577,7 +615,7 @@ class InstallerTests(unittest.TestCase):
 
     def run_helpers(self, code):
         helpers = self.root / 'helpers.sh'
-        helpers.write_text(INSTALLER.read_text().split('deployment_dir=')[0])
+        helpers.write_text(self.installer.read_text().split('deployment_dir=')[0])
         return subprocess.run(['bash', '-c', 'source "$1"; ' + code, 'test', str(helpers)], env=self.env, capture_output=True, text=True, timeout=15)
 
     def account_calls(self):
@@ -618,11 +656,142 @@ class InstallerTests(unittest.TestCase):
         if Path('/var/run/docker.sock').is_socket():
             self.assertEqual(agent['group_add'], [str(Path('/var/run/docker.sock').stat().st_gid)])
         self.assertIn('webboard-agent (432:433)', (self.deploy / 'NEXT-STEPS.txt').read_text())
+        self.assertNotIn('Controls__Systemd__0', agent['environment'])
+        self.assertFalse(self.policy_path.exists())
         before = (self.deploy / 'compose.yaml').read_bytes()
         account_count = len(self.account_calls())
         self.assert_ok(self.run_installer('', '--resume'))
         self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
         self.assertEqual(account_count, len(self.account_calls()))
+
+    @unittest.skipUnless(Path('/run/dbus/system_bus_socket').is_socket() and
+                         Path('/run/systemd/system').is_dir(), 'Host systemd sockets needed')
+    def test_systemd_controls_install_policy_and_matching_agent_allowlist(self):
+        self.assert_ok(self.run_installer(self.answers('agent', systemd=True,
+                                                      systemd_controls=('frpc.service', 'other.service'))))
+        env = self.config()['services']['agent']['environment']
+        self.assertEqual(env['Controls__Systemd__0'], 'frpc.service')
+        self.assertEqual(env['Controls__Systemd__1'], 'other.service')
+        policy = self.policy_path.read_text()
+        self.assertIn("var units = ['frpc.service', 'other.service'];", policy)
+        self.assertNotIn('manage-unit-files', policy)
+        self.assertEqual(self.policy_path.stat().st_mode & 0o777, 0o644)
+        self.assertIn('Host start/stop/restart authorization configured',
+                      (self.deploy / 'NEXT-STEPS.txt').read_text())
+        before = self.policy_path.read_bytes()
+        self.assert_ok(self.run_installer('', '--resume'))
+        self.assertEqual(before, self.policy_path.read_bytes())
+        self.assert_ok(self.run_manage('remove', 'y\n'))
+        self.assertEqual(before, self.policy_path.read_bytes())
+        self.assertTrue((self.root / 'account').exists())
+
+    def run_authorization(self, *services):
+        options = [part for service in services for part in ('--authorize-systemd', service)]
+        return subprocess.run(['bash', str(self.installer), *options],
+                              env=self.env, capture_output=True, text=True, timeout=15)
+
+    def test_authorization_repairs_policy_without_touching_deployment_or_containers(self):
+        self.deploy.mkdir()
+        compose = self.deploy / 'compose.yaml'
+        compose.write_text('existing secrets and configuration')
+        self.assert_ok(self.run_authorization('frpc.service'))
+        self.assertIn("var units = ['frpc.service'];", self.policy_path.read_text())
+        result = self.run_authorization('other.service')
+        self.assert_ok(result)
+        self.assertIn('Controls__Systemd__0: other.service', result.stdout)
+        self.assertIn('user: "432:433"', result.stdout)
+        self.assertNotIn('frpc.service', self.policy_path.read_text())
+        self.assertEqual(compose.read_text(), 'existing secrets and configuration')
+        self.assertFalse((self.root / 'log').exists())
+        calls = [json.loads(line) for line in (self.root / 'policy-log').read_text().splitlines()]
+        self.assertIn('-o', calls[0])
+        self.assertIn('-g', calls[0])
+        self.assertIn('0', calls[0])
+
+    def test_authorization_rejects_invalid_names_before_host_changes(self):
+        for name in ('--bad.service', 'bad/name.service', '*.service', "bad'.service",
+                     'bad\nname.service', 'a' * 249 + '.service'):
+            with self.subTest(name=name):
+                result = self.run_authorization(name)
+                self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.account_calls(), [])
+        self.assertFalse(self.policy_path.exists())
+
+    def test_authorization_preserves_unmanaged_policy_and_symlinks(self):
+        self.policy_path.write_text('// Manual host policy\nkeep this')
+        result = self.run_authorization('frpc.service')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.policy_path.read_text(), '// Manual host policy\nkeep this')
+        self.policy_path.unlink()
+        outside = self.root / 'outside-policy'
+        outside.write_text('keep outside')
+        self.policy_path.symlink_to(outside)
+        self.assertNotEqual(self.run_authorization('frpc.service').returncode, 0)
+        self.assertEqual(outside.read_text(), 'keep outside')
+
+    def test_policy_install_failure_is_reported(self):
+        self.env['MOCK_POLICY_INSTALL_FAIL'] = '1'
+        result = self.run_authorization('frpc.service')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Could not install the systemd control policy', result.stderr)
+        self.assertFalse(self.policy_path.exists())
+
+    def test_missing_polkit_installs_available_debian_package(self):
+        release = self.root / 'os-release'
+        release.write_text('ID=ubuntu\n')
+        self.installer.write_text(self.installer.read_text().replace('/etc/os-release', str(release)))
+        for candidate, expected in [('polkitd', 'polkitd'), ('none', 'policykit-1')]:
+            with self.subTest(package=expected):
+                code = '''
+polkit_ready=false
+command() {
+    if [[ "$1" == -v && "$2" == pkcheck ]]; then "$polkit_ready"; else builtin command "$@"; fi
+}
+root_command() {
+    printf '%%s\\n' "$*"
+    [[ "$1 $2" != 'apt-get install' ]] || polkit_ready=true
+}
+apt_has_candidate() { [[ "$1" == '%s' ]]; }
+ensure_polkit
+''' % candidate
+                result = self.run_helpers(code)
+                self.assert_ok(result)
+                self.assertIn('apt-get update', result.stdout)
+                self.assertIn('apt-get install -y ' + expected, result.stdout)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for generated policy evaluation')
+    def test_policy_grants_only_named_runtime_actions_to_agent_user(self):
+        escaped = r'example@disk\x2dname.service'
+        self.assert_ok(self.run_authorization('frpc.service', escaped))
+        code = r'''
+const fs = require('fs'), vm = require('vm');
+let rule;
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
+  polkit: {addRule: callback => rule = callback, Result: {YES: 'yes'}}
+});
+const cases = JSON.parse(process.argv[2]);
+console.log(JSON.stringify(cases.map(([user, unit, verb, id]) =>
+  rule({id, lookup: key => ({unit, verb})[key]}, {user}) || null)));
+'''
+        action = 'org.freedesktop.systemd1.manage-units'
+        cases = [['webboard-agent', 'frpc.service', verb, action] for verb in ('start', 'stop', 'restart')]
+        cases += [['webboard-agent', escaped, 'restart', action],
+                  ['other-user', 'frpc.service', 'restart', action],
+                  ['webboard-agent', 'other.service', 'restart', action],
+                  ['webboard-agent', 'frpc.service', 'reload', action],
+                  ['webboard-agent', 'frpc.service', 'enable', 'org.freedesktop.systemd1.manage-unit-files'],
+                  ['webboard-agent', 'frpc.service', 'restart', 'org.freedesktop.systemd1.reload-daemon']]
+        result = subprocess.run(['node', '-e', code, str(self.policy_path), json.dumps(cases)],
+                                capture_output=True, text=True, timeout=15)
+        self.assert_ok(result)
+        self.assertEqual(json.loads(result.stdout), ['yes'] * 4 + [None] * 5)
+
+    def test_authorization_cannot_be_combined_with_installation_options(self):
+        for options in (['--resume'], ['--components', 'agent'], ['--directory', str(self.deploy)], ['--port', '8080']):
+            result = subprocess.run(['bash', str(self.installer), '--authorize-systemd', 'frpc.service', *options],
+                                    env=self.env, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.account_calls(), [])
 
     @unittest.skipUnless(Path('/run/dbus/system_bus_socket').is_socket() and
                          Path('/run/systemd/system').is_dir(), 'Host systemd sockets needed')

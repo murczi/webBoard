@@ -78,7 +78,7 @@ to that server's TLS configuration; `verify-full` optionally imports a public CA
 PEM file, otherwise it uses system certificate authorities. Use a host reachable
 from the UI container; `localhost` refers to that container.
 
-Agent installs prompt for Docker/systemd monitoring, optional Docker control
+Agent installs prompt for Docker/systemd monitoring, optional Docker and systemd control
 targets, and an existing token or automatic token generation. An agent sharing
 this deployment with a UI uses `https://agent:8443`; its profile and trust are
 configured automatically. An agent without a UI asks for the reachable hostname
@@ -93,8 +93,25 @@ Agent certificates expire after 365 days; follow the
 
 Systemd monitoring creates or reuses a dedicated non-login `webboard-agent` host
 account, runs the container with its host-assigned UID/GID, and mounts the host
-D-Bus socket. Creating the account requires root or sudo. Service controls remain
-disabled until you follow the [host policy guide](deploy/agent/README.md#one-time-host-authorization).
+D-Bus socket. Creating the account requires root or sudo. Opting into systemd
+controls also installs host polkit permissions for start/stop/restart on the exact
+services you select, and installs polkit if missing on Ubuntu/Debian. Controls
+default to off; enable/disable require the broader
+[manual host policy](deploy/agent/README.md#one-time-host-authorization).
+
+To authorize runtime controls for an existing agent without reinstalling, run on
+the agent host:
+
+```bash
+bash webboard-install.sh --authorize-systemd frpc.service
+# Authorize multiple services by repeating the option:
+bash webboard-install.sh --authorize-systemd frpc.service --authorize-systemd example.service
+```
+
+This replaces the installer-managed runtime service list. It preserves deployment
+files, certificates, tokens, data, and running containers, and prints the matching
+Compose `user` and `Controls__Systemd__…` entries to apply. See the
+[host authorization guide](deploy/agent/README.md#one-time-host-authorization).
 Docker monitoring mounts the host Docker socket and only explicitly listed
 containers receive control access.
 
@@ -149,9 +166,9 @@ connection-detail files, and volumes backed up privately. Lifecycle mutations
 are serialized; if a forcibly killed command leaves `.webboard-operation.lock`,
 confirm no command is running before removing that empty directory. Updates
 recreate file-mounted services and validate CA exports before replacing them.
-Removal keeps shared Docker images, the `webboard-agent` host account, and any CA
-you imported into host/browser trust stores; remove the account and trust entries
-separately if no longer needed. Existing deployments can correct their systemd
+Removal keeps shared Docker images, the `webboard-agent` host account, installed
+host polkit rules, and any CA you imported into host/browser trust stores; remove
+the account, rules, and trust entries separately if no longer needed. Existing deployments can correct their systemd
 identity using the [host account guide](deploy/agent/README.md#host-account-for-systemd-monitoring)
 without reinstalling or replacing secrets.
 
