@@ -37,80 +37,113 @@ Each recipe states where to run its commands and which names/IPs to change.
 
 ## Install with a Bash script
 
-For a complete installation on one Docker host, download and run the standalone
-[guided installer](deploy/install.sh). No repository clone or .NET SDK is needed.
-Run it with Bash in an interactive terminal:
+Download and run the [guided installer](deploy/install.sh) in an interactive Bash
+terminal. No repository clone or .NET SDK is needed:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/murczi/webBoard/main/deploy/install.sh -o webboard-install.sh
 bash webboard-install.sh
 ```
 
-The installer prompts for the deployment directory and HTTP port, HTTPS mode
-(local private CA, public domain, or an existing proxy), optional host agent,
-Docker/systemd monitoring, optional Docker control targets, and additional
-private monitoring networks. It offers to install missing Docker/OpenSSL
-prerequisites on fresh Ubuntu/Debian hosts with sudo. Other hosts need Bash,
-OpenSSL, Docker Engine, and a Compose plugin supporting `up --wait` already
-installed. Existing/conflicting Docker installations are preserved; use the
-[Docker host guide](deploy/docs/docker-host.md) to resolve prerequisites if needed.
+The **first prompt** asks which components to install: enter `db`, `ui`, `agent`,
+or any comma-separated combination, for example `db,ui` or `ui,agent`.
+`database` is also accepted; spaces, capitalization, and repeated names are handled.
+The default is `db,ui,agent`. Only selected components are written to Compose and
+started. Run the installer separately on each host for a distributed deployment.
 
-It generates independent database/JWT secrets and, when installing an agent,
-its token, encrypted CA key, certificate, and password-protected PFX. It places
-TLS material under the deployment directory, builds the UI image with CA trust,
-detects the actual Docker subnet, and writes the complete private `compose.yaml`.
-The database and agent have no published host ports; HTTP binds to loopback.
-Docker monitoring uses the host socket; systemd monitoring uses the host D-Bus
-socket. Service controls remain disabled; optional systemd controls require the
-[agent guide's host policy setup](deploy/agent/README.md#one-time-host-authorization).
+| Selection | Remaining connection setup |
+| --- | --- |
+| `db` | Generates PostgreSQL credentials/TLS, asks for bind address, port, and certificate hostname, and saves connection details for remote UIs. |
+| `ui` | Asks for existing database host/port/name/user/password and TLS/CA settings; configures browser HTTPS and optional remote agents. |
+| `agent` | Generates token/TLS, asks for private bind address, port, and certificate hostname, and saves connection details for remote UIs. |
+| `db,ui` | Connects UI to the local database automatically with verified TLS. |
+| `db,agent` | Exposes each component using its chosen bind address and exports separate connection details; no UI migrations run. |
+| `ui,agent` | Asks for external database details and configures the local agent token, CA trust, and exact Docker subnet automatically. |
+| `db,ui,agent` | Wires all three together automatically; database and agent have no host ports unless you opt into remote access. |
 
-For local or public HTTPS, the installer adds a Caddy container and persistent
-certificate storage. Public HTTPS requires a domain resolving to the host and
-reachable TCP ports 80/443; the installer prompts you to prepare these. Local
-HTTPS exports `browser-ca.crt`: import that public CA into each browser device's
-trusted certificate authorities. The installer also offers to install that CA in
-the host system trust store when `update-ca-certificates` is available. For remote
-local-HTTPS access, choose a private
-bind IP and make the selected hostname resolve to it. With an existing proxy,
-point its HTTPS route at the chosen loopback HTTP port. DNS/router changes and
-browser certificate trust must be completed on the relevant provider/device.
+For a newly installed database, choose its name/owner and the installer generates
+an independent password. It creates a server certificate for `database` and the
+selected remote hostname/IP, initializes certificate permissions inside the
+PostgreSQL image, and configures the UI with `SSL Mode=VerifyFull` and the public
+CA mounted at `/tls/database-ca.crt`. `database-connection.txt` contains the
+credentials and connection string for later UI installs. Transfer only the
+public `tls/database-ca.crt` to those UI hosts and provide its path when prompted.
+A database-only install does not run webBoard migrations: the UI installer does
+that when connecting to it. Restrict exposed database ports to authorized UI hosts.
 
-The installer pulls/builds images, waits for PostgreSQL, applies migrations,
-starts the services, and probes the configured agent using verified TLS and its
-token. It writes `NEXT-STEPS.txt` with the browser URL and remaining client steps.
-Register your administrator account first. If an agent was installed, add this
-machine in **Host management** with `https://agent:8443`; its UI profile is already
-configured. Agent server certificates last 365 days; follow the
-[renewal guide](deploy/docs/agent-tls.md#verify-and-renew) before expiry.
+For an existing external database, the password prompt is hidden. The installer
+builds the connection string from the individual fields, escaping passwords and
+names correctly. Choose `verify-full` (default), `require`, or `disable` according
+to that server's TLS configuration; `verify-full` optionally imports a public CA
+PEM file, otherwise it uses system certificate authorities. Use a host reachable
+from the UI container; `localhost` refers to that container.
 
-To choose a deployment directory or a different HTTP port in advance:
+Agent installs prompt for Docker/systemd monitoring, optional Docker control
+targets, and an existing token or automatic token generation. An agent sharing
+this deployment with a UI uses `https://agent:8443`; its profile and trust are
+configured automatically. An agent without a UI asks for the reachable hostname
+or IPv4 used by remote UIs and publishes HTTPS on the selected private address.
+`agent-connection.txt` contains its URL/token and public CA location. Give remote
+UI installers that hostname/port, token, and public CA PEM file. Numeric remote
+agent IPs receive an exact `/32` outbound allowance; DNS-based private agents
+prompt for their network CIDR. UI installs can configure multiple remote agents
+and additional private monitoring networks. Tokens and keys stay on the server.
+Agent certificates expire after 365 days; follow the
+[renewal guide](deploy/docs/agent-tls.md#certificates-created-by-the-guided-installer).
+
+Systemd monitoring mounts the host D-Bus socket; service controls remain disabled
+until you follow the [host policy guide](deploy/agent/README.md#one-time-host-authorization).
+Docker monitoring mounts the host Docker socket and only explicitly listed
+containers receive control access.
+
+UI installs offer local HTTPS, public HTTPS, or an existing proxy. Local mode asks
+for the bind IP first and defaults the browser/Caddy certificate address to it;
+you may choose a DNS hostname instead. Wildcard binds require a concrete browser
+address. Caddy's `default_sni` handles IP-based TLS through Docker port forwarding.
+Import the exported `browser-ca.crt` into each browser device's trusted
+certificate authorities. Public mode requires your DNS and incoming TCP 80/443
+to reach this host; Caddy obtains/renews certificates. With an existing proxy,
+point its HTTPS route at the chosen loopback HTTP port before registration/login.
+DNS/router changes and browser trust happen on the relevant provider/device.
+
+The installer offers Docker/OpenSSL prerequisite installation on fresh
+Ubuntu/Debian hosts with sudo. Other hosts need Bash, OpenSSL, Docker, and Compose
+with `up --wait`. Agents need Linux host sockets. A UI using private agent CAs
+also needs Docker Buildx for its trust image; the fresh-host package setup includes
+it. It builds that image locally, selectively pulls published images, stops the
+UI before migrations, and preserves credentials on retries/upgrades.
+
+To preselect components, directory, and UI HTTP port:
 
 ```bash
-bash webboard-install.sh --directory "$HOME/webboard" --port 8088
+bash webboard-install.sh --components db,ui --directory "$HOME/webboard" --port 8088
 ```
 
-The fixed Compose project name `webboard` supports one installation per Docker
-host. Existing deployment files are never overwritten. On failure, configuration,
-credentials, and database data are preserved. Once configuration generation has
-completed, retry with:
+The fixed project name `webboard` permits one deployment per Docker host. Existing
+artifacts are never overwritten. Incomplete configuration is not started and its
+unused Docker network is released. Once configuration is complete, retry using
+the saved component selection and credentials:
 
 ```bash
 bash webboard-install.sh --directory "$HOME/webboard" --resume
 ```
 
-The generated `manage.sh` also handles lifecycle commands from any directory:
+The generated `manage.sh` operates only on this deployment's selected services:
 
 ```bash
 bash "$HOME/webboard/manage.sh" logs
-bash "$HOME/webboard/manage.sh" start   # retry/start using existing credentials
+bash "$HOME/webboard/manage.sh" start   # retry/start
 # Back up PostgreSQL before upgrading:
-bash "$HOME/webboard/manage.sh" update  # pull/build, stop UI, migrate, restart
-bash "$HOME/webboard/manage.sh" stop    # preserves database and Caddy volumes
+bash "$HOME/webboard/manage.sh" update  # pull/build, migrate only if UI selected
+bash "$HOME/webboard/manage.sh" stop    # preserves data/certificate volumes
 ```
 
-Keep the deployment directory and volumes backed up privately. The generated
-helper rebuilds the trusted UI image when needed and selectively pulls published
-images; it does not try to pull the local `webboard-ui:trusted` image.
+Read `NEXT-STEPS.txt` for the browser URL and connection-detail file locations.
+Register your administrator first. Keep Compose, private TLS material,
+connection-detail files, and volumes backed up privately. Lifecycle mutations
+are serialized; if a forcibly killed command leaves `.webboard-operation.lock`,
+confirm no command is running before removing that empty directory. Updates
+recreate file-mounted services and validate CA exports before replacing them.
 
 ## Install on separate machines
 

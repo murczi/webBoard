@@ -180,3 +180,59 @@ requires updating the UI trust image as well. Check expiry with:
 ```bash
 openssl x509 -in tls/agent.crt -noout -dates
 ```
+
+## Certificates created by the guided installer
+
+The guided installer stores each component's CA separately. Agent CA files are
+`tls/ca/agent/ca.crt`, `tls/ca/agent/ca.key`, and `tls/ca/agent/password`; the PFX
+export password is `tls/pfx-password`. A standalone agent certificate includes
+its prompted remote hostname/IP as well as `agent` for local Docker access.
+Database CA files are under `tls/ca/database/`; the public database CA is also
+exported as `tls/database-ca.crt`, and its server files are `tls/database/server.*`.
+Do not run the earlier CA-creation recipe over an installer-generated deployment.
+
+To renew the installer-generated server certificates using their existing keys,
+CA, and saved SAN extensions, run this in Bash from its deployment directory.
+It handles whichever TLS components were installed and leaves CA trust/tokens
+stable. Schedule a maintenance window: the lifecycle helper stops the UI and
+recreates selected services. Back up PostgreSQL first if it is installed.
+
+```bash
+bash <<'RENEW'
+set -euo pipefail
+umask 077
+webboard_renewal_dir=$(mktemp -d)
+trap 'rm -rf "$webboard_renewal_dir"' EXIT
+for webboard_component in database agent; do
+  if [[ "$webboard_component" == database ]]; then
+    webboard_prefix=tls/database/server
+  else
+    webboard_prefix=tls/agent
+  fi
+  [[ -f "$webboard_prefix.csr" ]] || continue
+  webboard_ca="tls/ca/$webboard_component"
+  openssl x509 -req -in "$webboard_prefix.csr" \
+    -CA "$webboard_ca/ca.crt" -CAkey "$webboard_ca/ca.key" \
+    -passin "file:$webboard_ca/password" \
+    -set_serial "0x$(openssl rand -hex 16)" -days 365 -sha256 \
+    -extfile "$webboard_prefix.ext" -out "$webboard_renewal_dir/$webboard_component.crt"
+  openssl verify -CAfile "$webboard_ca/ca.crt" -purpose sslserver \
+    "$webboard_renewal_dir/$webboard_component.crt"
+  if [[ "$webboard_component" == agent ]]; then
+    openssl pkcs12 -export -out "$webboard_renewal_dir/agent.pfx" \
+      -inkey tls/agent.key -in "$webboard_renewal_dir/agent.crt" \
+      -certfile "$webboard_ca/ca.crt" -passout file:tls/pfx-password
+    install -m 0644 "$webboard_renewal_dir/agent.pfx" tls/agent.pfx
+  fi
+  install -m 0600 "$webboard_renewal_dir/$webboard_component.crt" "$webboard_prefix.crt"
+done
+bash ./manage.sh start
+RENEW
+```
+
+The database helper resolves its PostgreSQL UID inside the image and copies the
+renewed server key/certificate into its private named TLS volume before restart.
+The agent and proxy are recreated so replaced bind-mounted files are loaded.
+If changing an agent/database hostname, update its saved `.ext` SAN list before
+issuance and update the corresponding UI connection/profile. CA rotation is a
+separate operation requiring new public CA trust on all affected UI hosts.

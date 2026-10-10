@@ -15,15 +15,19 @@ INSTALLER = Path(__file__).resolve().parents[1] / 'install.sh'
 DOCKER = shutil.which('docker')
 
 MOCK_DOCKER = r'''#!/usr/bin/env python3
-import json, os, pathlib, subprocess, sys
+import json, os, pathlib, shutil, subprocess, sys
 args = sys.argv[1:]
 with open(os.environ['MOCK_LOG'], 'a') as log:
     log.write(json.dumps(args) + '\n')
+if args[:2] == ['buildx', 'version']:
+    sys.exit(1 if os.environ.get('MOCK_BUILDX_MISSING') == '1' else 0)
 if args[:1] in [['info'], ['ps'], ['volume']]:
     sys.exit(0)
 if args[:2] == ['network', 'create']:
     pathlib.Path(os.environ['MOCK_NETWORK']).touch()
     print('mock-network')
+elif args[:2] == ['network', 'rm']:
+    pathlib.Path(os.environ['MOCK_NETWORK']).unlink(missing_ok=True)
 elif args[:2] == ['network', 'inspect']:
     if not pathlib.Path(os.environ['MOCK_NETWORK']).exists(): sys.exit(1)
     print('172.30.0.0/16')
@@ -41,13 +45,24 @@ elif args[:1] == ['compose']:
         if '--migrate' in command and pathlib.Path(os.environ['MOCK_FAIL']).exists():
             sys.exit(42)
         if command[:1] == ['cp']:
-            pathlib.Path(command[-1]).write_text('public browser CA mock\n')
+            if os.environ.get('MOCK_CP_FAIL') == '1': sys.exit(1)
+            shutil.copyfile(os.environ['MOCK_CA'], command[-1])
 else:
     raise SystemExit('Unexpected Docker invocation: ' + repr(args))
 '''
 
 @unittest.skipUnless(DOCKER and shutil.which('openssl'), 'Docker Compose and OpenSSL required')
 class InstallerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cert_temp = tempfile.TemporaryDirectory(prefix='webboard-installer-ca-test-')
+        cls.addClassCleanup(cls.cert_temp.cleanup)
+        cls.ca = Path(cls.cert_temp.name) / 'root.crt'
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                        '-days', '1', '-subj', '/CN=Test Browser CA', '-keyout',
+                        str(Path(cls.cert_temp.name) / 'root.key'), '-out', str(cls.ca)],
+                       check=True, capture_output=True, timeout=30)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='webboard-installer-test-')
         self.addCleanup(self.temp.cleanup)
@@ -58,9 +73,12 @@ class InstallerTests(unittest.TestCase):
         mock = bin_dir / 'docker'
         mock.write_text(MOCK_DOCKER)
         mock.chmod(0o755)
+        sleep = bin_dir / 'sleep'
+        sleep.write_text('#!/usr/bin/env bash\nexit 0\n')
+        sleep.chmod(0o755)
         self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
                         MOCK_LOG=str(self.root / 'log'), MOCK_NETWORK=str(self.root / 'network'),
-                        MOCK_FAIL=str(self.root / 'fail'), REAL_DOCKER=DOCKER)
+                        MOCK_FAIL=str(self.root / 'fail'), MOCK_CA=str(self.ca), REAL_DOCKER=DOCKER)
         # Keep inherited Compose settings from influencing validation/deployment.
         for key in ('COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'COMPOSE_PROFILES'):
             self.env.pop(key, None)
@@ -75,118 +93,394 @@ class InstallerTests(unittest.TestCase):
                                  '--file', str(self.deploy / 'compose.yaml'), 'config', '--format', 'json'],
                                 text=True, capture_output=True, timeout=15, env=self.env)
         self.assertEqual(result.returncode, 0, result.stderr)
-        return json.loads(result.stdout)
+        cfg = json.loads(result.stdout)
+        # Compose escapes dollars in rendered output so it can be used as Compose
+        # input again. Docker receives the unescaped values (checked with live run).
+        for service in cfg['services'].values():
+            for key, value in service.get('environment', {}).items():
+                if isinstance(value, str): service['environment'][key] = value.replace('$$', '$')
+        return cfg
 
     def calls(self):
         return [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
 
+
+    def answers(self, components='db,ui', *, https='existing', bind='127.0.0.1',
+                browser='', https_port='443', db_ca='', password='external password',
+                remote=None, private='', token='', db_publish=False, agent_publish=False):
+        chosen = set(components.lower().replace(' ', '').split(','))
+        db = 'db' in chosen or 'database' in chosen
+        ui, agent = 'ui' in chosen, 'agent' in chosen
+        values = [components]
+        if db:
+            values += ['', '']  # database/owner names
+            if ui: values += ['y' if db_publish else 'n']
+            if not ui or db_publish: values += ['192.168.1.20', '5433', 'db.internal']
+        elif ui:
+            values += ['db.internal', '5432', '', '', password, 'verify-full', db_ca]
+        if ui:
+            values += ['', https]  # JWT generation and HTTPS mode
+            if https == 'local': values += [bind, browser, https_port]
+            elif https == 'public': values += [browser or 'board.example.org', 'y']
+        if agent:
+            if Path('/var/run/docker.sock').is_socket(): values += ['y', 'my-server', '']
+            if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir(): values += ['n']
+            values += [token]
+            if ui: values += ['y' if agent_publish else 'n']
+            if not ui or agent_publish: values += ['192.168.1.30', '5081', 'agent.internal']
+        if ui:
+            if remote:
+                host, remote_token, ca, cidr = remote
+                values += ['y', host, '5081', remote_token, ca]
+                if not all(part.isdigit() for part in host.split('.')): values += [cidr]
+            values += ['n', private]
+            if private: values += ['']
+            if https == 'local': values += ['n']  # optional host trust import
+        return '\n'.join(values) + '\n'
+
+    def assert_ok(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+
+    def test_all_component_combinations(self):
+        combinations = ('db', 'ui', 'agent', 'db,ui', 'db,agent', 'ui,agent', 'db,ui,agent')
+        for components in combinations:
+            with self.subTest(components=components):
+                if 'agent' in components and not Path('/var/run/docker.sock').is_socket():
+                    continue
+                case = type(self)('test_all_component_combinations')
+                case.setUp()
+                try:
+                    result = case.run_installer(case.answers(components))
+                    case.assert_ok(result)
+                    cfg = case.config()
+                    wanted = {'database' if name == 'db' else name for name in components.split(',')}
+                    self.assertEqual(set(cfg['services']), wanted)
+                    calls = case.calls()
+                    migration_calls = [c for c in calls if '--migrate' in c]
+                    self.assertEqual(len(migration_calls), int('ui' in wanted))
+                    db_start = [c for c in calls if 'up' in c and c[-1] == 'database']
+                    self.assertEqual(len(db_start), int('database' in wanted))
+                    ui_stop = [c for c in calls if 'stop' in c and c[-1] == 'ui']
+                    self.assertEqual(len(ui_stop), int('ui' in wanted))
+                    self.assertEqual((case.deploy / 'database-connection.txt').exists(), 'database' in wanted)
+                    self.assertEqual((case.deploy / 'agent-connection.txt').exists(), 'agent' in wanted)
+                    self.assertEqual((case.deploy / 'trust/Dockerfile').exists(), {'ui', 'agent'} <= wanted)
+                    if 'database' in wanted:
+                        db = cfg['services']['database']
+                        self.assertIn('ssl=on', db['command'])
+                        self.assertEqual('ports' in db, 'ui' not in wanted)
+                    if 'agent' in wanted:
+                        agent = cfg['services']['agent']
+                        self.assertEqual('ports' in agent, 'ui' not in wanted)
+                        if 'ui' in wanted:
+                            self.assertEqual(agent['environment']['Security__Tokens__0'], cfg['services']['ui']['environment']['Agents__0__Token'])
+                    if 'ui' in wanted:
+                        ui = cfg['services']['ui']
+                        self.assertEqual('depends_on' in ui, 'database' in wanted)
+                        self.assertIn('Host="database"' if 'database' in wanted else 'Host="db.internal"', ui['environment']['ConnectionStrings__WebboardDatabase'])
+                finally:
+                    case.doCleanups()
+
+    def test_component_prompt_is_first_and_rejects_invalid_lists(self):
+        result = self.run_installer('ui,,agent\nunknown\nDB, UI, db\n' + self.answers().split('\n', 1)[1])
+        self.assert_ok(result)
+        self.assertTrue(result.stderr.startswith('Components to install'))
+        self.assertEqual(set(self.config()['services']), {'database', 'ui'})
+
+    def test_default_component_selection(self):
+        if not Path('/var/run/docker.sock').is_socket(): self.skipTest('Host Docker socket needed')
+        result = self.run_installer('\n' + self.answers('db,ui,agent').split('\n', 1)[1])
+        self.assert_ok(result)
+        self.assertEqual(set(self.config()['services']), {'database', 'ui', 'agent'})
+
     def test_existing_proxy_secrets_and_no_agent(self):
-        result = self.run_installer('existing\nn\n10.0.0.0/24\n\n')
-        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_installer(self.answers(private='10.0.0.0/24'))
+        self.assert_ok(result)
         cfg = self.config()
-        self.assertEqual(set(cfg['services']), {'database', 'ui'})
         db = cfg['services']['database']['environment']['POSTGRES_PASSWORD']
         env = cfg['services']['ui']['environment']
         self.assertEqual(len(db), 64)
         self.assertNotEqual(db, env['Authentication__Jwt__SigningKey'])
-        self.assertIn('Password=' + db, env['ConnectionStrings__WebboardDatabase'])
+        self.assertIn('Password="' + db + '"', env['ConnectionStrings__WebboardDatabase'])
+        self.assertIn('SSL Mode=VerifyFull', env['ConnectionStrings__WebboardDatabase'])
+        self.assertIn('Root Certificate="/tls/database-ca.crt"', env['ConnectionStrings__WebboardDatabase'])
         self.assertEqual(env['Outbound__AllowedPrivateNetworks__0'], '10.0.0.0/24')
-        self.assertEqual((self.deploy / 'compose.yaml').stat().st_mode & 0o777, 0o600)
-        self.assertFalse((self.deploy / 'tls').exists())
+        for name in ('compose.yaml', 'database-connection.txt'):
+            self.assertEqual((self.deploy / name).stat().st_mode & 0o777, 0o600)
         before = (self.deploy / 'compose.yaml').read_bytes()
-        result = self.run_installer('')
+        result = self.run_installer('db,ui\n')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
 
+    def test_external_database_password_escaping_and_ca_mount(self):
+        password = 'p;Host=evil;"quo\'te$word\\end '
+        result = self.run_installer(self.answers('ui', password=password, db_ca=str(self.ca)))
+        self.assert_ok(result)
+        ui = self.config()['services']['ui']
+        connection = ui['environment']['ConnectionStrings__WebboardDatabase']
+        self.assertIn('Password="p;Host=evil;""quo\'te$word\\end "', connection)
+        self.assertIn('Host="db.internal"', connection)
+        self.assertIn('Root Certificate="/tls/database-ca.crt"', connection)
+        self.assertNotIn('depends_on', ui)
+        self.assertTrue((self.deploy / 'tls/database-ca.crt').exists())
+        self.assertNotIn(password, result.stdout + result.stderr)
+
+    def test_imported_ca_extracts_only_public_certificate(self):
+        bundle = self.root / 'ca-with-private-key.pem'
+        bundle.write_bytes(self.ca.read_bytes() + (self.ca.parent / 'root.key').read_bytes())
+        self.assert_ok(self.run_installer(self.answers('ui', db_ca=str(bundle), remote=('10.2.3.4', 'a' * 64, str(bundle), ''))))
+        for certificate in (self.deploy / 'tls/database-ca.crt', self.deploy / 'trust/remote-agent-ca-0.crt'):
+            self.assertIn('BEGIN CERTIFICATE', certificate.read_text())
+            self.assertNotIn('PRIVATE KEY', certificate.read_text())
+
+    def test_local_services_can_be_exposed_for_other_ui_hosts(self):
+        if not Path('/var/run/docker.sock').is_socket(): self.skipTest('Host Docker socket needed')
+        self.assert_ok(self.run_installer(self.answers('db,ui,agent', db_publish=True, agent_publish=True)))
+        services = self.config()['services']
+        for service, address, port in [('database', '192.168.1.20', 5433), ('agent', '192.168.1.30', 5081)]:
+            published = services[service]['ports'][0]
+            self.assertEqual(published['host_ip'], address)
+            self.assertEqual(int(published['published']), port)
+        env = services['ui']['environment']
+        self.assertIn('Host="database";Port=5432;', env['ConnectionStrings__WebboardDatabase'])
+        self.assertEqual(env['Agents__0__BaseUrl'], 'https://agent:8443')
+
+    def test_database_and_agent_port_collision_stops_before_generation(self):
+        if not Path('/var/run/docker.sock').is_socket(): self.skipTest('Host Docker socket needed')
+        answers = self.answers('db,agent').replace('192.168.1.30\n5081\n', '192.168.1.20\n5433\n')
+        result = self.run_installer(answers)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Agent and database ports overlap', result.stderr)
+        self.assertFalse((self.deploy / 'tls').exists())
+
+    def test_external_database_without_private_ca(self):
+        result = self.run_installer(self.answers('ui'))
+        self.assert_ok(result)
+        connection = self.config()['services']['ui']['environment']['ConnectionStrings__WebboardDatabase']
+        self.assertNotIn('Root Certificate=', connection)
+        self.assertFalse((self.deploy / 'tls').exists())
+
+    def test_external_database_tls_choices(self):
+        for choice, expected in [('require', 'Require'), ('disable', 'Disable')]:
+            with self.subTest(choice=choice):
+                case = type(self)('test_external_database_tls_choices'); case.setUp()
+                try:
+                    answers = case.answers('ui').replace('verify-full\n\n', choice + '\n', 1)
+                    case.assert_ok(case.run_installer(answers))
+                    self.assertIn('SSL Mode=' + expected, case.config()['services']['ui']['environment']['ConnectionStrings__WebboardDatabase'])
+                finally: case.doCleanups()
+
+    def test_remote_agent_trust_token_and_exact_ip_allowance(self):
+        token = 'remote$quo\'te"' + 'a' * 40
+        result = self.run_installer(self.answers('ui', remote=('10.2.3.4', token, str(self.ca), '')))
+        self.assert_ok(result)
+        ui = self.config()['services']['ui']
+        self.assertEqual(ui['environment']['Agents__0__BaseUrl'], 'https://10.2.3.4:5081')
+        self.assertEqual(ui['environment']['Agents__0__Token'], token)
+        self.assertEqual(ui['environment']['Outbound__AllowedPrivateNetworks__0'], '10.2.3.4/32')
+        self.assertEqual(ui['pull_policy'], 'never')
+        self.assertTrue((self.deploy / 'trust/remote-agent-ca-0.crt').exists())
+        self.assertNotIn(token, result.stdout + result.stderr)
+
+    def test_remote_agent_public_ca_does_not_build_private_trust_image(self):
+        result = self.run_installer(self.answers('ui', remote=('agent.example.org', 'a' * 64, '', '')))
+        self.assert_ok(result)
+        self.assertFalse((self.deploy / 'trust').exists())
+        self.assertNotIn('Outbound__AllowedPrivateNetworks__0', self.config()['services']['ui']['environment'])
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_local_and_remote_agent_profiles_get_distinct_indices(self):
+        result = self.run_installer(self.answers('ui,agent', remote=('agent.other.lan', 'b' * 64, str(self.ca), '10.4.0.0/24')))
+        self.assert_ok(result)
+        env = self.config()['services']['ui']['environment']
+        self.assertEqual(env['Agents__0__BaseUrl'], 'https://agent:8443')
+        self.assertEqual(env['Agents__1__BaseUrl'], 'https://agent.other.lan:5081')
+        self.assertEqual(env['Outbound__AllowedPrivateNetworks__0'], '172.30.0.0/16')
+        self.assertEqual(env['Outbound__AllowedPrivateNetworks__1'], '10.4.0.0/24')
+
     def test_local_https_input_validation(self):
-        result = self.run_installer('wrong\nlocal\nbad/name\nlocalhost\n127.0.0.1\n99999\n8443\nn\nbad-cidr\n10.1.0.0/16\n\nn\n')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        cfg = self.config()
-        self.assertEqual(cfg['services']['proxy']['ports'][0]['published'], '8443')
-        self.assertEqual(cfg['services']['proxy']['ports'][0]['host_ip'], '127.0.0.1')
+        answers = self.answers(https='local', private='10.1.0.0/16')
+        answers = answers.replace('local\n127.0.0.1\n\n443', 'wrong\nlocal\nbad-ip\n127.0.0.1\nbad/name\nlocalhost\n99999\n8443')
+        answers = answers.replace('10.1.0.0/16', 'bad-cidr\n10.1.0.0/16')
+        result = self.run_installer(answers)
+        self.assert_ok(result)
+        self.assertEqual(self.config()['services']['proxy']['ports'][0]['published'], '8443')
         self.assertIn('tls internal', (self.deploy / 'Caddyfile').read_text())
         self.assertTrue((self.deploy / 'browser-ca.crt').exists())
-        self.assertIn('trusted certificate authority', result.stdout)
+
+    def test_lan_bind_defaults_caddy_site_and_browser_url_to_ip(self):
+        result = self.run_installer(self.answers(https='local', bind='192.168.1.42'))
+        self.assert_ok(result)
+        self.assertEqual(self.config()['services']['proxy']['ports'][0]['host_ip'], '192.168.1.42')
+        caddy = (self.deploy / 'Caddyfile').read_text()
+        self.assertIn('https://192.168.1.42 {', caddy)
+        self.assertIn('default_sni 192.168.1.42', caddy)
+        self.assertNotIn('localhost', caddy)
+        self.assertIn('Browser address: https://192.168.1.42', result.stdout)
+
+    def test_nondefault_loopback_uses_its_own_browser_ip(self):
+        result = self.run_installer(self.answers(https='local', bind='127.0.0.2'))
+        self.assert_ok(result)
+        self.assertIn('https://127.0.0.2 {', (self.deploy / 'Caddyfile').read_text())
+
+    def test_lan_bind_preserves_explicit_dns_name(self):
+        result = self.run_installer(self.answers(https='local', bind='192.168.1.42', browser='board.lan', https_port='8443'))
+        self.assert_ok(result)
+        self.assertIn('https://board.lan {', (self.deploy / 'Caddyfile').read_text())
+        self.assertIn('Browser address: https://board.lan:8443', result.stdout)
+
+    def test_wildcard_bind_requires_concrete_browser_address(self):
+        answers = self.answers(https='local', bind='0.0.0.0', browser='192.168.1.42').replace('0.0.0.0\n192.168.1.42', '0.0.0.0\n\n0.0.0.0\n999.1.2.3\n192.168.1.42')
+        self.assert_ok(self.run_installer(answers))
+        self.assertIn('https://192.168.1.42 {', (self.deploy / 'Caddyfile').read_text())
 
     def test_public_https(self):
-        result = self.run_installer('public\nboard.example.org\ny\nn\n\n')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        cfg = self.config()
-        self.assertEqual({p['published'] for p in cfg['services']['proxy']['ports']}, {'80', '443'})
+        self.assert_ok(self.run_installer(self.answers(https='public')))
+        self.assertEqual({p['published'] for p in self.config()['services']['proxy']['ports']}, {'80', '443'})
         self.assertNotIn('tls internal', (self.deploy / 'Caddyfile').read_text())
-        self.assertFalse((self.deploy / 'browser-ca.crt').exists())
 
     def test_public_requires_readiness_before_generating(self):
-        result = self.run_installer('public\nboard.example.org\nn\n')
+        result = self.run_installer(self.answers(https='public').replace('board.example.org\ny', 'board.example.org\nn'))
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.deploy / 'compose.yaml').exists())
         self.assertFalse((self.root / 'network').exists())
 
-    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed for agent selection')
-    def test_agent_certificates_migration_failure_and_resume(self):
-        # Select Docker monitoring and one control target; decline systemd if present.
-        systemd_answer = 'n\n' if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir() else ''
-        (self.root / 'fail').touch()
-        result = self.run_installer('existing\ny\ny\nmy-server\n\n' + systemd_answer + '\n')
+    def test_public_https_rejects_conflicting_http_port(self):
+        result = self.run_installer(self.answers(https='public'), '--port', '443')
         self.assertNotEqual(result.returncode, 0)
-        cfg = self.config()
-        agent = cfg['services']['agent']
-        ui = cfg['services']['ui']
-        self.assertNotIn('ports', agent)
-        self.assertEqual(agent['environment']['Security__Tokens__0'], ui['environment']['Agents__0__Token'])
-        self.assertEqual(agent['environment']['Controls__Docker__0'], 'my-server')
-        self.assertEqual(ui['environment']['Outbound__AllowedPrivateNetworks__0'], '172.30.0.0/16')
-        self.assertEqual(ui['pull_policy'], 'never')
-        self.assertIn('ca-certificates curl', (self.deploy / 'trust/Dockerfile').read_text())
-        checked = subprocess.run(['openssl', 'verify', '-CAfile', str(self.deploy / 'tls/ca/agent-ca.crt'),
-                                  '-verify_hostname', 'agent', str(self.deploy / 'tls/agent.crt')], capture_output=True)
+        self.assertIn('cannot be 80 or 443', result.stderr)
+
+    def test_public_internal_names_are_rejected(self):
+        result = self.run_installer(self.answers(https='public', browser='board.INTERNAL'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Public HTTPS needs a public DNS name', result.stderr)
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_agent_certificates_migration_failure_and_resume(self):
+        (self.root / 'fail').touch()
+        result = self.run_installer(self.answers('db,ui,agent'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.deploy / '.webboard-ready').exists())
+        self.assertFalse(any('up' in call and '--help' not in call and call[-1] != 'database' for call in self.calls()))
+        checked = subprocess.run(['openssl', 'verify', '-CAfile', str(self.deploy / 'tls/ca/agent/ca.crt'), '-verify_hostname', 'agent', str(self.deploy / 'tls/agent.crt')], capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)
-        checked = subprocess.run(['openssl', 'pkcs12', '-in', str(self.deploy / 'tls/agent.pfx'),
-                                  '-passin', 'file:' + str(self.deploy / 'tls/pfx-password'), '-noout'], capture_output=True)
+        checked = subprocess.run(['openssl', 'pkcs12', '-in', str(self.deploy / 'tls/agent.pfx'), '-passin', 'file:' + str(self.deploy / 'tls/pfx-password'), '-noout'], capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)
-        self.assertEqual((self.deploy / 'tls').stat().st_mode & 0o777, 0o700)
-        self.assertEqual((self.deploy / 'tls/agent.key').stat().st_mode & 0o777, 0o600)
         before = (self.deploy / 'compose.yaml').read_bytes()
-        # Migration failure must prevent UI/agent startup.
-        self.assertFalse(any('--wait' in call and call[-1] != 'database' and '--help' not in call for call in self.calls()))
         (self.root / 'fail').unlink()
-        result = self.run_installer('', '--resume')
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_ok(self.run_installer('', '--resume'))
         self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
-        calls = self.calls()
-        self.assertTrue(any('exec' in call and 'ui' in call for call in calls))
-        self.assertFalse(any('pull' in call and 'ui' in call for call in calls))
-        self.assertTrue(any('build' in call and '--pull' in call for call in calls))
-        # A second start/upgrade keeps credentials and builds the trusted image.
-        result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'update'], env=self.env,
-                                capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('pull' in call and 'ui' in call for call in self.calls()))
+        result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'update'], env=self.env, capture_output=True, text=True, timeout=60)
+        self.assert_ok(result)
         self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
 
-    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket() and
-                         Path('/run/dbus/system_bus_socket').is_socket() and
-                         Path('/run/systemd/system').is_dir(), 'Host Docker/systemd sockets needed')
-    def test_systemd_monitoring_mounts(self):
-        result = self.run_installer('existing\ny\ny\n\ny\n\n')
+    def test_database_certificate_matches_internal_and_remote_names(self):
+        self.assert_ok(self.run_installer(self.answers('db')))
+        for name in ('database', 'db.internal'):
+            result = subprocess.run(['openssl', 'verify', '-CAfile', str(self.deploy / 'tls/database-ca.crt'), '-verify_hostname', name, str(self.deploy / 'tls/database/server.crt')], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.deploy / 'tls/database/server.key').stat().st_mode & 0o777, 0o600)
+        details = (self.deploy / 'database-connection.txt').read_text()
+        self.assertIn('Host: db.internal', details)
+        self.assertIn('Port: 5433', details)
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_standalone_agent_certificate_and_export(self):
+        self.assert_ok(self.run_installer(self.answers('agent')))
+        result = subprocess.run(['openssl', 'verify', '-CAfile', str(self.deploy / 'tls/ca/agent/ca.crt'), '-verify_hostname', 'agent.internal', str(self.deploy / 'tls/agent.crt')], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        agent = self.config()['services']['agent']
-        sources = {v['source'] for v in agent['volumes']}
-        self.assertIn('/run/dbus/system_bus_socket', sources)
-        self.assertIn('/run/systemd/system', sources)
-        self.assertFalse(any(key.startswith('Controls__Systemd') for key in agent['environment']))
+        self.assertIn('Agent URL: https://agent.internal:5081', (self.deploy / 'agent-connection.txt').read_text())
+        self.assertFalse(any('buildx' in call or '--migrate' in call for call in self.calls()))
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_existing_agent_token_is_preserved(self):
+        token = 'existing' + 'a' * 64
+        self.assert_ok(self.run_installer(self.answers('ui,agent', token=token)))
+        cfg = self.config()
+        self.assertEqual(cfg['services']['agent']['environment']['Security__Tokens__0'], token)
+        self.assertEqual(cfg['services']['ui']['environment']['Agents__0__Token'], token)
+
+    def test_existing_generated_auxiliary_files_are_preserved(self):
+        self.deploy.mkdir()
+        target = self.root / 'keep-me'; target.write_text('untouched')
+        (self.deploy / 'database-connection.txt').symlink_to(target)
+        result = self.run_installer('db\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(target.read_text(), 'untouched')
+
+    def test_partial_generation_releases_network_and_cannot_resume(self):
+        chmod = self.root / 'bin/chmod'
+        chmod.write_text('#!/usr/bin/env bash\nif [[ "$*" == "0700 manage.sh" ]]; then exit 42; fi\nexec /usr/bin/chmod "$@"\n')
+        chmod.chmod(0o755)
+        result = self.run_installer(self.answers())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.deploy / '.webboard-ready').exists())
+        self.assertFalse((self.root / 'network').exists())
+        self.assertNotEqual(self.run_installer('', '--resume').returncode, 0)
+
+    def test_failed_ca_export_does_not_succeed_with_stale_ca(self):
+        self.assert_ok(self.run_installer(self.answers(https='local')))
+        before = (self.deploy / 'browser-ca.crt').read_bytes()
+        self.env['MOCK_CP_FAIL'] = '1'
+        result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'start'], env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Could not export browser CA', result.stderr)
+        self.assertEqual(before, (self.deploy / 'browser-ca.crt').read_bytes())
+        self.assertFalse((self.deploy / '.webboard-operation.lock').exists())
+        self.assertEqual(list(self.deploy.glob('.webboard-ca.*')), [])
+
+    def test_lifecycle_lock_prevents_overlapping_stop(self):
+        self.assert_ok(self.run_installer(self.answers()))
+        (self.deploy / '.webboard-operation.lock').mkdir()
+        count = len(self.calls())
+        result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'stop'], env=self.env, capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Another lifecycle command', result.stderr)
+        self.assertEqual(count, len(self.calls()))
+        result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'logs'], env=self.env, capture_output=True, text=True, timeout=15)
+        self.assert_ok(result)
+
+    def run_helpers(self, code):
+        helpers = self.root / 'helpers.sh'
+        helpers.write_text(INSTALLER.read_text().split('deployment_dir=')[0])
+        return subprocess.run(['bash', '-c', 'source "$1"; ' + code, 'test', str(helpers)], env=self.env, capture_output=True, text=True, timeout=15)
+
+    def test_ambiguous_ipv4_is_rejected(self):
+        result = self.run_helpers('if valid_ipv4 010.0.0.1 || valid_cidr 010.0.0.0/8; then exit 1; fi; valid_ipv4 10.0.0.1; valid_cidr 10.0.0.0/8')
+        self.assert_ok(result)
+
+    def test_package_detection_requires_installable_candidate(self):
+        result = self.run_helpers('apt-cache() { if [[ "$2" == docker-compose-plugin ]]; then printf "  Candidate: (none)\\n"; else printf "  Candidate: 2.0.0\\n"; fi; }; if apt_has_candidate docker-compose-plugin; then exit 1; fi; apt_has_candidate docker-compose-v2')
+        self.assert_ok(result)
+
+    def test_component_cli_option_and_resume_constraints(self):
+        self.assert_ok(self.run_installer(self.answers().split('\n', 1)[1], '--components', 'db,ui'))
+        result = self.run_installer('', '--resume', '--components', 'agent')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('saved component selection', result.stderr)
 
     def test_default_directory_and_port_prompts(self):
         self.env['HOME'] = str(self.root)
-        result = subprocess.run(['bash', str(INSTALLER)], input='\n\nexisting\nn\n\n',
-                                text=True, capture_output=True, env=self.env, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.root / 'webboard/compose.yaml').exists())
+        answers = self.answers().split('\n')
+        answers[1:1] = ['', '']
+        result = subprocess.run(['bash', str(INSTALLER)], input='\n'.join(answers), text=True, capture_output=True, env=self.env, timeout=60)
+        self.assert_ok(result)
         self.assertIn('127.0.0.1:8080:8080', (self.root / 'webboard/compose.yaml').read_text())
 
     def test_invalid_port_does_not_create_directory(self):
         result = self.run_installer('', '--port', '0')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.deploy.exists())
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_missing_buildx_stops_before_creating_secrets(self):
+        self.env['MOCK_BUILDX_MISSING'] = '1'
+        result = self.run_installer(self.answers('ui,agent'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('requires Docker Buildx', result.stderr)
+        self.assertFalse((self.deploy / 'tls').exists())
+        self.assertFalse((self.root / 'network').exists())
 
 if __name__ == '__main__':
     unittest.main()
