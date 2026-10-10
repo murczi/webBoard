@@ -35,6 +35,83 @@ and official sources for the steps outside webBoard itself:
 
 Each recipe states where to run its commands and which names/IPs to change.
 
+## Install with a Bash script
+
+For a complete installation on one Docker host, download and run the standalone
+[guided installer](deploy/install.sh). No repository clone or .NET SDK is needed.
+Run it with Bash in an interactive terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/murczi/webBoard/main/deploy/install.sh -o webboard-install.sh
+bash webboard-install.sh
+```
+
+The installer prompts for the deployment directory and HTTP port, HTTPS mode
+(local private CA, public domain, or an existing proxy), optional host agent,
+Docker/systemd monitoring, optional Docker control targets, and additional
+private monitoring networks. It offers to install missing Docker/OpenSSL
+prerequisites on fresh Ubuntu/Debian hosts with sudo. Other hosts need Bash,
+OpenSSL, Docker Engine, and a Compose plugin supporting `up --wait` already
+installed. Existing/conflicting Docker installations are preserved; use the
+[Docker host guide](deploy/docs/docker-host.md) to resolve prerequisites if needed.
+
+It generates independent database/JWT secrets and, when installing an agent,
+its token, encrypted CA key, certificate, and password-protected PFX. It places
+TLS material under the deployment directory, builds the UI image with CA trust,
+detects the actual Docker subnet, and writes the complete private `compose.yaml`.
+The database and agent have no published host ports; HTTP binds to loopback.
+Docker monitoring uses the host socket; systemd monitoring uses the host D-Bus
+socket. Service controls remain disabled; optional systemd controls require the
+[agent guide's host policy setup](deploy/agent/README.md#one-time-host-authorization).
+
+For local or public HTTPS, the installer adds a Caddy container and persistent
+certificate storage. Public HTTPS requires a domain resolving to the host and
+reachable TCP ports 80/443; the installer prompts you to prepare these. Local
+HTTPS exports `browser-ca.crt`: import that public CA into each browser device's
+trusted certificate authorities. The installer also offers to install that CA in
+the host system trust store when `update-ca-certificates` is available. For remote
+local-HTTPS access, choose a private
+bind IP and make the selected hostname resolve to it. With an existing proxy,
+point its HTTPS route at the chosen loopback HTTP port. DNS/router changes and
+browser certificate trust must be completed on the relevant provider/device.
+
+The installer pulls/builds images, waits for PostgreSQL, applies migrations,
+starts the services, and probes the configured agent using verified TLS and its
+token. It writes `NEXT-STEPS.txt` with the browser URL and remaining client steps.
+Register your administrator account first. If an agent was installed, add this
+machine in **Host management** with `https://agent:8443`; its UI profile is already
+configured. Agent server certificates last 365 days; follow the
+[renewal guide](deploy/docs/agent-tls.md#verify-and-renew) before expiry.
+
+To choose a deployment directory or a different HTTP port in advance:
+
+```bash
+bash webboard-install.sh --directory "$HOME/webboard" --port 8088
+```
+
+The fixed Compose project name `webboard` supports one installation per Docker
+host. Existing deployment files are never overwritten. On failure, configuration,
+credentials, and database data are preserved. Once configuration generation has
+completed, retry with:
+
+```bash
+bash webboard-install.sh --directory "$HOME/webboard" --resume
+```
+
+The generated `manage.sh` also handles lifecycle commands from any directory:
+
+```bash
+bash "$HOME/webboard/manage.sh" logs
+bash "$HOME/webboard/manage.sh" start   # retry/start using existing credentials
+# Back up PostgreSQL before upgrading:
+bash "$HOME/webboard/manage.sh" update  # pull/build, stop UI, migrate, restart
+bash "$HOME/webboard/manage.sh" stop    # preserves database and Caddy volumes
+```
+
+Keep the deployment directory and volumes backed up privately. The generated
+helper rebuilds the trusted UI image when needed and selectively pulls published
+images; it does not try to pull the local `webboard-ui:trusted` image.
+
 ## Install on separate machines
 
 1. Start PostgreSQL using the [database guide](deploy/database/README.md), or
