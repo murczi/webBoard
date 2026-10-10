@@ -21,7 +21,20 @@ with open(os.environ['MOCK_LOG'], 'a') as log:
     log.write(json.dumps(args) + '\n')
 if args[:2] == ['buildx', 'version']:
     sys.exit(1 if os.environ.get('MOCK_BUILDX_MISSING') == '1' else 0)
-if args[:1] in [['info'], ['ps'], ['volume']]:
+if args[:1] == ['info']: sys.exit(0)
+if args[:1] == ['ps']:
+    print(os.environ.get('MOCK_CONTAINERS', ''), end='')
+    sys.exit(0)
+if args[:2] == ['volume', 'ls']:
+    print(os.environ.get('MOCK_VOLUMES', ''), end='')
+    sys.exit(0)
+if args[:1] == ['rm'] or args[:2] == ['volume', 'rm']:
+    sys.exit(42 if os.environ.get('MOCK_REMOVE_FAIL') == '1' else 0)
+if args[:1] == ['inspect']:
+    print(os.environ.get('MOCK_OLD_DIRECTORY', ''))
+    sys.exit(0)
+if args[:2] == ['network', 'ls']:
+    if pathlib.Path(os.environ['MOCK_NETWORK']).exists(): print('mock-network')
     sys.exit(0)
 if args[:2] == ['network', 'create']:
     pathlib.Path(os.environ['MOCK_NETWORK']).touch()
@@ -440,6 +453,99 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(count, len(self.calls()))
         result = subprocess.run(['bash', str(self.deploy / 'manage.sh'), 'logs'], env=self.env, capture_output=True, text=True, timeout=15)
         self.assert_ok(result)
+
+    def run_manage(self, command, answers=''):
+        return subprocess.run(['bash', str(self.deploy / 'manage.sh'), command],
+                              input=answers, env=self.env, capture_output=True,
+                              text=True, timeout=30)
+
+    def test_remove_defaults_to_abort_and_preserves_installation(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        before = (self.deploy / 'compose.yaml').read_bytes()
+        count = len(self.calls())
+        result = self.run_manage('remove', '\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
+        self.assertFalse(any(c[0] == 'rm' or c[:2] == ['volume', 'rm']
+                             for c in self.calls()[count:]))
+        result = self.run_installer('ui\n\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Installation aborted', result.stderr)
+        self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
+
+    def test_remove_deletes_owned_resources_and_keeps_unrelated_files(self):
+        self.assert_ok(self.run_installer(self.answers(https='local')))
+        keep = self.deploy / 'keep.txt'; keep.write_text('keep')
+        outside = self.root / 'outside'; outside.mkdir()
+        (outside / 'keep.txt').write_text('outside')
+        (self.deploy / 'tls').rename(self.deploy / 'original-tls')
+        (self.deploy / 'tls').symlink_to(outside, target_is_directory=True)
+        self.env.update(MOCK_CONTAINERS='container-1\ncontainer-2',
+                        MOCK_VOLUMES='database-volume\ncertificate-volume')
+        self.assert_ok(self.run_manage('remove', 'y\n'))
+        self.assertEqual(keep.read_text(), 'keep')
+        self.assertEqual((outside / 'keep.txt').read_text(), 'outside')
+        for name in ('compose.yaml', '.webboard-installer', 'manage.sh', 'tls',
+                     'browser-ca.crt', '.webboard-operation.lock'):
+            self.assertFalse((self.deploy / name).exists(), name)
+        self.assertFalse((self.root / 'network').exists())
+        calls = self.calls()
+        remove = calls.index(['rm', '-f', '--', 'container-2'])
+        volume = calls.index(['volume', 'rm', '--', 'database-volume'])
+        network = calls.index(['network', 'rm', '--', 'mock-network'])
+        self.assertLess(remove, volume)
+        self.assertLess(volume, network)
+
+    def test_installer_can_remove_and_replace_existing_install(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        keep = self.deploy / 'keep.txt'; keep.write_text('keep')
+        answers = self.answers('db')
+        self.assert_ok(self.run_installer(answers.replace('db\n', 'db\ny\n', 1)))
+        self.assertEqual(set(self.config()['services']), {'database'})
+        self.assertEqual(keep.read_text(), 'keep')
+
+    def test_installer_finds_install_in_another_directory(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        old = self.deploy
+        self.env.update(MOCK_CONTAINERS='container-1', MOCK_OLD_DIRECTORY=str(old))
+        self.deploy = self.root / 'new deployment'
+        self.assert_ok(self.run_installer(self.answers('ui').replace('ui\n', 'ui\ny\n\n', 1)))
+        self.assertFalse((old / '.webboard-installer').exists())
+        self.assertTrue((self.deploy / '.webboard-ready').exists())
+
+    def test_remove_failure_keeps_configuration_and_releases_lock(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        self.env.update(MOCK_VOLUMES='database-volume', MOCK_REMOVE_FAIL='1')
+        result = self.run_manage('remove', 'y\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.deploy / 'compose.yaml').exists())
+        self.assertTrue((self.deploy / '.webboard-installer').exists())
+        self.assertFalse((self.deploy / '.webboard-operation.lock').exists())
+
+    def test_remove_respects_lifecycle_lock_and_validates_marker(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        lock = self.deploy / '.webboard-operation.lock'; lock.mkdir()
+        count = len(self.calls())
+        self.assertNotEqual(self.run_manage('remove', 'y\n').returncode, 0)
+        self.assertFalse(any(c[0] == 'rm' for c in self.calls()[count:]))
+        lock.rmdir()
+        (self.deploy / '.webboard-installer').write_text('unrelated')
+        self.assertNotEqual(self.run_manage('remove', 'y\n').returncode, 0)
+        self.assertTrue((self.deploy / 'compose.yaml').exists())
+
+    def test_remove_accepts_partial_generation(self):
+        self.assert_ok(self.run_installer(self.answers('ui')))
+        (self.deploy / '.webboard-ready').unlink()
+        self.assert_ok(self.run_manage('remove', 'y\n'))
+        self.assertFalse((self.deploy / '.webboard-installer').exists())
+
+    def test_unrecognized_artifacts_cannot_be_removed(self):
+        self.deploy.mkdir()
+        compose = self.deploy / 'compose.yaml'; compose.write_text('keep')
+        result = self.run_installer('ui\ny\n\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(compose.read_text(), 'keep')
+        self.assertFalse(any(c[0] == 'rm' for c in self.calls()))
 
     def run_helpers(self, code):
         helpers = self.root / 'helpers.sh'

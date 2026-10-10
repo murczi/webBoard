@@ -23,7 +23,7 @@ Other hosts require Bash, OpenSSL, Docker Engine, and Compose with up --wait.
 
 Public HTTPS requires DNS pointing at this host and reachable ports 80/443.
 Local HTTPS requires trusting the generated public CA on each browser device.
-Existing deployments are never overwritten. One webboard stack per Docker host.
+Existing installs prompt to remove (including data) or abort. One stack per host.
 HELP
 }
 ask() {
@@ -236,6 +236,37 @@ EXT
     openssl verify -CAfile "$2/ca.crt" -purpose sslserver "$1.crt"
 }
 
+# Shared with generated manage.sh; only installer-owned files and Docker resources
+# carrying the webboard project label are removed. Keep the directory itself.
+remove_deployment() (
+    local target=$1 marker containers volumes networks resource
+    cd -- "$target" || fail "Cannot access deployment directory: $target"
+    [[ -f .webboard-installer && ! -L .webboard-installer ]] || fail 'Removal requires the original installer-generated deployment directory.'
+    marker=$(< .webboard-installer)
+    [[ "$marker" =~ ^webBoard\ installer\ v[0-9]+$ ]] || fail 'Unrecognized installer marker; refusing to remove files.'
+    mkdir .webboard-operation.lock 2>/dev/null || fail 'Another lifecycle command holds .webboard-operation.lock. Confirm no command is running before removing a stale lock.'
+    trap 'rmdir .webboard-operation.lock' EXIT
+    containers=$("${docker_cmd[@]}" ps -aq --filter label=com.docker.compose.project=webboard)
+    volumes=$("${docker_cmd[@]}" volume ls -q --filter label=com.docker.compose.project=webboard)
+    networks=$("${docker_cmd[@]}" network ls -q --filter label=com.docker.compose.project=webboard)
+    # Remove containers before volumes/networks; stop on errors and keep files
+    # so a failed removal can be retried from the original directory.
+    while IFS= read -r resource; do
+        [[ -z "$resource" ]] || "${docker_cmd[@]}" rm -f -- "$resource" >/dev/null || exit 1
+    done <<< "$containers"
+    while IFS= read -r resource; do
+        [[ -z "$resource" ]] || "${docker_cmd[@]}" volume rm -- "$resource" >/dev/null || exit 1
+    done <<< "$volumes"
+    while IFS= read -r resource; do
+        [[ -z "$resource" ]] || "${docker_cmd[@]}" network rm -- "$resource" >/dev/null || exit 1
+    done <<< "$networks"
+    rm -rf -- compose.yaml compose.yml docker-compose.yaml docker-compose.yml \
+        .webboard-ready tls trust Caddyfile manage.sh NEXT-STEPS.txt local-https \
+        browser-ca.crt database-connection.txt agent-connection.txt
+    rm -f -- .webboard-installer
+    printf 'Removed webBoard installation from %s.\n' "$PWD"
+)
+
 deployment_dir="${HOME:?HOME must be set}/webboard"
 ui_port=8080
 resume=false
@@ -283,8 +314,9 @@ if $resume; then
         [[ -f .webboard-ready ]] || fail 'Configuration generation did not finish; preserve this directory and retry in a fresh directory.'
     fi
 else
+    existing_artifacts=false
     for existing in compose.yaml compose.yml docker-compose.yaml docker-compose.yml .webboard-installer .webboard-ready tls trust Caddyfile manage.sh NEXT-STEPS.txt local-https browser-ca.crt database-connection.txt agent-connection.txt .webboard-operation.lock; do
-        [[ ! -e "$existing" && ! -L "$existing" ]] || fail "Existing deployment artifact: $deployment_dir/$existing. Use --resume for a generated installation."
+        [[ ! -e "$existing" && ! -L "$existing" ]] || existing_artifacts=true
     done
 fi
 if ! command -v openssl >/dev/null || ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then install_prerequisites; fi
@@ -304,8 +336,32 @@ compose_help=$("${docker_cmd[@]}" compose up --help)
 if $resume; then exec bash ./manage.sh start; fi
 existing_containers=$("${docker_cmd[@]}" ps -aq --filter label=com.docker.compose.project=webboard)
 existing_volumes=$("${docker_cmd[@]}" volume ls -q --filter label=com.docker.compose.project=webboard)
-[[ -z "$existing_containers" && -z "$existing_volumes" ]] || fail 'A webboard project already exists. Use its original deployment directory.'
-if "${docker_cmd[@]}" network inspect webboard-private >/dev/null 2>&1; then fail 'Network webboard-private already exists. Resume its original installation.'; fi
+existing_networks=$("${docker_cmd[@]}" network ls -q --filter label=com.docker.compose.project=webboard)
+network_exists=false
+if "${docker_cmd[@]}" network inspect webboard-private >/dev/null 2>&1; then network_exists=true; fi
+if $existing_artifacts || [[ -n "$existing_containers$existing_volumes$existing_networks" ]] || $network_exists; then
+    printf 'An existing webBoard installation was found. Removal permanently deletes its database, certificates, secrets, and generated files.\n'
+    yesno 'Remove the old installation and continue (answer n to abort; --resume preserves it)' n || fail 'Installation aborted; existing installation preserved.'
+    old_directory=$deployment_dir
+    if [[ ! -f .webboard-installer ]]; then
+        old_directory=''
+        if [[ -n "$existing_containers" ]]; then
+            first_container=${existing_containers%%$'\n'*}
+            old_directory=$("${docker_cmd[@]}" inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$first_container")
+            [[ "$old_directory" != '<no value>' ]] || old_directory=''
+        fi
+        ask old_directory 'Original deployment directory to remove' "$old_directory"
+        [[ -n "$old_directory" ]] || fail 'The original deployment directory is required for removal.'
+    fi
+    remove_deployment "$old_directory"
+    # An unrelated network with this name must never be deleted.
+    if "${docker_cmd[@]}" network inspect webboard-private >/dev/null 2>&1; then
+        fail 'Network webboard-private is not owned by this installation; resolve the conflict before retrying.'
+    fi
+    for existing in compose.yaml compose.yml docker-compose.yaml docker-compose.yml .webboard-installer .webboard-ready tls trust Caddyfile manage.sh NEXT-STEPS.txt local-https browser-ca.crt database-connection.txt agent-connection.txt; do
+        [[ ! -e "$existing" && ! -L "$existing" ]] || fail "Existing deployment artifact remains: $deployment_dir/$existing"
+    done
+fi
 
 # Database settings. Local PostgreSQL always has TLS, including its internal name.
 db_name=dashboard
@@ -738,12 +794,14 @@ if $install_database || [[ "$https_mode" != existing ]]; then
 fi
 
 # Lifecycle commands operate only on services selected for this deployment.
-cat > manage.sh <<'MANAGE'
-#!/usr/bin/env bash
+{
+    printf '#!/usr/bin/env bash\n'
+    declare -f fail ask yesno remove_deployment
+    cat <<'MANAGE'
 set -Eeuo pipefail
 umask 077
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-[[ -f .webboard-ready ]] || { printf 'Configuration generation did not finish; do not start this deployment.\n' >&2; exit 1; }
+[[ "${1:-start}" == remove || -f .webboard-ready ]] || { printf 'Configuration generation did not finish; do not start this deployment.\n' >&2; exit 1; }
 lock_held=false
 export_dir=''
 cleanup() {
@@ -834,11 +892,17 @@ case "${1:-start}" in
         "${compose[@]}" ps
         cat NEXT-STEPS.txt
         ;;
+    remove)
+        printf 'Removal permanently deletes this webBoard installation, including database and certificate volumes, secrets, and generated files.\n'
+        yesno 'Remove this installation (answer n to abort)' n || fail 'Removal aborted; existing installation preserved.'
+        remove_deployment "$PWD"
+        ;;
     logs) "${compose[@]}" logs --tail=100;;
     stop) "${compose[@]}" down;;
-    *) printf 'Usage: bash manage.sh [start|update|logs|stop]\n' >&2; exit 1;;
+    *) printf 'Usage: bash manage.sh [start|update|logs|stop|remove]\n' >&2; exit 1;;
 esac
 MANAGE
+} > manage.sh
 chmod 0700 manage.sh
 printf '\nwebBoard components started: %s\nDeployment directory: %s\n' "$components" "$deployment_dir" > NEXT-STEPS.txt
 if $install_database; then
@@ -906,6 +970,7 @@ cat >> NEXT-STEPS.txt <<'STEPS'
 Keep Compose, private TLS material/passwords, connection details, and volumes backed up privately.
 Back up PostgreSQL before upgrades. Update: bash manage.sh update.
 Retry: bash manage.sh start. Logs: bash manage.sh logs. Stop: bash manage.sh stop.
+Uninstall (permanently deletes data): bash manage.sh remove.
 Guides: https://github.com/murczi/webBoard/tree/main/deploy/docs
 STEPS
 printf 'configuration complete\n' > .webboard-ready

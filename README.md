@@ -120,8 +120,10 @@ bash webboard-install.sh --components db,ui --directory "$HOME/webboard" --port 
 ```
 
 The fixed project name `webboard` permits one deployment per Docker host. Existing
-artifacts are never overwritten. Incomplete configuration is not started and its
-unused Docker network is released. Once configuration is complete, retry using
+installs prompt to remove the old installation or abort (the default). Removal
+permanently deletes its database and certificate volumes, secrets, and generated
+files; unrelated files in the deployment directory are kept. Incomplete
+configuration is not started and its unused Docker network is released. Once configuration is complete, retry using
 the saved component selection and credentials:
 
 ```bash
@@ -136,6 +138,7 @@ bash "$HOME/webboard/manage.sh" start   # retry/start
 # Back up PostgreSQL before upgrading:
 bash "$HOME/webboard/manage.sh" update  # pull/build, migrate only if UI selected
 bash "$HOME/webboard/manage.sh" stop    # preserves data/certificate volumes
+bash "$HOME/webboard/manage.sh" remove  # confirms uninstall, permanently deletes data
 ```
 
 Read `NEXT-STEPS.txt` for the browser URL and connection-detail file locations.
@@ -144,6 +147,8 @@ connection-detail files, and volumes backed up privately. Lifecycle mutations
 are serialized; if a forcibly killed command leaves `.webboard-operation.lock`,
 confirm no command is running before removing that empty directory. Updates
 recreate file-mounted services and validate CA exports before replacing them.
+Removal keeps shared Docker images and any CA you imported into host/browser
+trust stores; remove those trust entries separately if no longer needed.
 
 ## Install on separate machines
 
