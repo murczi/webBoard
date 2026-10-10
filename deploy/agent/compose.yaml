@@ -20,8 +20,8 @@ services:
       # Controls__Docker__0: my-game-server
       # Controls__Systemd__0: example.service
       # Enable/disable also require the host polkit setup in README.md.
-    # Optional: override to match a dedicated host account for systemd policy.
-    # user: "1654:1654"
+    # For systemd monitoring, set the dedicated host account's UID:GID (README.md).
+    # user: "HOST_UID:HOST_GID"
     # HOST_IP:HOST_PORT:CONTAINER_PORT; replace with this host's private/VPN IP.
     ports:
       - "10.0.0.30:5081:8443"

@@ -73,6 +73,29 @@ apt_has_candidate() {
 root_command() {
     if ((EUID == 0)); then "$@"; else sudo "$@"; fi
 }
+prepare_agent_account() {
+    # D-Bus resolves the peer's numeric UID using the host account database.
+    # Let the host allocate an identity instead of assuming the image's UID is free.
+    local account_entry account_name account_password account_gecos account_home account_shell
+    command -v getent >/dev/null || fail 'Systemd monitoring requires getent for host account lookup.'
+    if ! account_entry=$(getent passwd webboard-agent); then
+        command -v useradd >/dev/null || fail 'Systemd monitoring requires useradd to create the webboard-agent host account.'
+        [[ -x /usr/sbin/nologin ]] || fail 'Systemd monitoring requires /usr/sbin/nologin for the host account.'
+        if ((EUID != 0)); then command -v sudo >/dev/null || fail 'sudo is required to create the webboard-agent host account.'; fi
+        printf 'Creating the non-login webboard-agent host account for systemd monitoring.\n'
+        root_command useradd --system --user-group --no-create-home \
+            --home-dir /nonexistent --shell /usr/sbin/nologin \
+            --comment 'webBoard host agent' webboard-agent || fail 'Could not create the webboard-agent host account.'
+        account_entry=$(getent passwd webboard-agent) || fail 'Could not look up the new webboard-agent host account.'
+    fi
+    IFS=: read -r account_name account_password agent_uid agent_gid account_gecos account_home account_shell <<< "$account_entry"
+    [[ "$account_name" == webboard-agent && "$agent_uid" =~ ^[0-9]+$ && "$agent_gid" =~ ^[0-9]+$ ]] &&
+        ((10#$agent_uid > 0 && 10#$agent_gid > 0)) || fail 'The webboard-agent host account must have a non-root UID and GID.'
+    case "$account_shell" in
+        */nologin|*/false) ;;
+        *) fail 'The existing webboard-agent host account must have a non-login shell; refusing to use a login account.';;
+    esac
+}
 install_prerequisites() {
     [[ -r /etc/os-release ]] || fail 'Install Docker and OpenSSL using your OS package manager first.'
     # shellcheck disable=SC1091
@@ -463,7 +486,7 @@ if $install_agent; then
             docker_targets+=("$target")
         done
     fi
-    if [[ -S /run/dbus/system_bus_socket && -d /run/systemd/system ]] && yesno 'Enable systemd monitoring (service controls stay disabled)' y; then monitor_systemd=true; fi
+    if [[ -S /run/dbus/system_bus_socket && -d /run/systemd/system ]] && yesno 'Enable systemd monitoring (creates/reuses a non-login host account; service controls stay disabled)' y; then monitor_systemd=true; fi
     $monitor_docker || $monitor_systemd || fail 'No host monitoring source selected or available.'
     ask_secret agent_token 'Existing agent token (blank generates a new token)'
     [[ -z "$agent_token" ]] || valid_token "$agent_token" || fail 'Agent tokens require at least 32 characters and no whitespace.'
@@ -540,6 +563,7 @@ if $agent_publish; then
         if [[ "$https_mode" == public ]] && ports_conflict "$agent_bind" "$agent_port" 0.0.0.0 80; then fail 'Agent and proxy HTTP ports overlap.'; fi
     fi
 fi
+if $monitor_systemd; then prepare_agent_account; fi
 printf '\nInstalling components: %s in %s\n' "$components" "$deployment_dir"
 
 on_error() {
@@ -707,6 +731,7 @@ COMPOSE
     env_field Kestrel__Certificates__Default__Path /tls/agent.pfx >> compose.yaml
     env_field Kestrel__Certificates__Default__Password "$pfx_password" >> compose.yaml
     for ((i=0; i<${#docker_targets[@]}; i++)); do env_field "Controls__Docker__${i}" "${docker_targets[i]}" >> compose.yaml; done
+    if $monitor_systemd; then printf '    user: "%s:%s"\n' "$agent_uid" "$agent_gid" >> compose.yaml; fi
     if $agent_publish; then printf '    ports:\n      - "%s:%s:8443"\n' "$agent_bind" "$agent_port" >> compose.yaml; fi
     if $monitor_docker; then printf '    group_add:\n      - "%s"\n' "$docker_gid" >> compose.yaml; fi
     cat >> compose.yaml <<'COMPOSE'
@@ -952,6 +977,9 @@ STEPS
     for url in "${remote_urls[@]}"; do printf 'Remote agent profile configured: %s (use this exact URL in Host management).\n' "$url" >> NEXT-STEPS.txt; done
 fi
 if $install_agent; then
+    if $monitor_systemd; then
+        printf 'Systemd monitoring uses host account webboard-agent (%s:%s). This account is retained on uninstall; controls require host polkit policy.\n' "$agent_uid" "$agent_gid" >> NEXT-STEPS.txt
+    fi
     exported_agent_url=https://agent:8443
     if $agent_publish; then exported_agent_url="https://$agent_host:$agent_port"; fi
     cat > agent-connection.txt <<DETAILS

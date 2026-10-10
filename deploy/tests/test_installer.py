@@ -64,6 +64,24 @@ else:
     raise SystemExit('Unexpected Docker invocation: ' + repr(args))
 '''
 
+MOCK_ACCOUNT = r'''#!/usr/bin/env python3
+import json, os, pathlib, sys
+command = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+with open(os.environ['MOCK_ACCOUNT_LOG'], 'a') as log:
+    log.write(json.dumps([command] + args) + '\n')
+account = pathlib.Path(os.environ['MOCK_ACCOUNT_FILE'])
+if command == 'getent' and args == ['passwd', 'webboard-agent']:
+    if not account.exists(): sys.exit(2)
+    print(account.read_text(), end='')
+elif command == 'useradd' and args[-1:] == ['webboard-agent']:
+    if os.environ.get('MOCK_ACCOUNT_CREATE_FAIL') == '1': sys.exit(42)
+    if account.exists(): sys.exit(9)
+    account.write_text('webboard-agent:x:432:433:webBoard host agent:/nonexistent:/usr/sbin/nologin\n')
+else:
+    raise SystemExit('Unexpected account command: ' + repr([command] + args))
+'''
+
 @unittest.skipUnless(DOCKER and shutil.which('openssl'), 'Docker Compose and OpenSSL required')
 class InstallerTests(unittest.TestCase):
     @classmethod
@@ -92,6 +110,15 @@ class InstallerTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
                         MOCK_LOG=str(self.root / 'log'), MOCK_NETWORK=str(self.root / 'network'),
                         MOCK_FAIL=str(self.root / 'fail'), MOCK_CA=str(self.ca), REAL_DOCKER=DOCKER)
+        self.env.update(MOCK_ACCOUNT_FILE=str(self.root / 'account'),
+                        MOCK_ACCOUNT_LOG=str(self.root / 'account-log'))
+        for name in ('getent', 'useradd'):
+            mock = bin_dir / name
+            mock.write_text(MOCK_ACCOUNT)
+            mock.chmod(0o755)
+        sudo = bin_dir / 'sudo'
+        sudo.write_text('#!/usr/bin/env bash\nexec "$@"\n')
+        sudo.chmod(0o755)
         # Keep inherited Compose settings from influencing validation/deployment.
         for key in ('COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'COMPOSE_PROFILES'):
             self.env.pop(key, None)
@@ -120,7 +147,8 @@ class InstallerTests(unittest.TestCase):
 
     def answers(self, components='db,ui', *, https='existing', bind='127.0.0.1',
                 browser='', https_port='443', db_ca='', password='external password',
-                remote=None, private='', token='', db_publish=False, agent_publish=False):
+                remote=None, private='', token='', db_publish=False, agent_publish=False,
+                systemd=False):
         chosen = set(components.lower().replace(' ', '').split(','))
         db = 'db' in chosen or 'database' in chosen
         ui, agent = 'ui' in chosen, 'agent' in chosen
@@ -137,7 +165,7 @@ class InstallerTests(unittest.TestCase):
             elif https == 'public': values += [browser or 'board.example.org', 'y']
         if agent:
             if Path('/var/run/docker.sock').is_socket(): values += ['y', 'my-server', '']
-            if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir(): values += ['n']
+            if Path('/run/dbus/system_bus_socket').is_socket() and Path('/run/systemd/system').is_dir(): values += ['y' if systemd else 'n']
             values += [token]
             if ui: values += ['y' if agent_publish else 'n']
             if not ui or agent_publish: values += ['192.168.1.30', '5081', 'agent.internal']
@@ -551,6 +579,66 @@ class InstallerTests(unittest.TestCase):
         helpers = self.root / 'helpers.sh'
         helpers.write_text(INSTALLER.read_text().split('deployment_dir=')[0])
         return subprocess.run(['bash', '-c', 'source "$1"; ' + code, 'test', str(helpers)], env=self.env, capture_output=True, text=True, timeout=15)
+
+    def account_calls(self):
+        path = self.root / 'account-log'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_systemd_account_uses_host_allocation_and_is_reused(self):
+        for _ in range(2):
+            result = self.run_helpers('prepare_agent_account; printf "%s:%s" "$agent_uid" "$agent_gid"')
+            self.assert_ok(result)
+            self.assertTrue(result.stdout.endswith('432:433'))
+        created = [call for call in self.account_calls() if call[0] == 'useradd']
+        self.assertEqual(len(created), 1)
+        self.assertIn('--system', created[0])
+        self.assertIn('--user-group', created[0])
+        self.assertIn('--no-create-home', created[0])
+        self.assertNotIn('--uid', created[0])
+
+    def test_systemd_account_rejects_root_or_login_identity(self):
+        for uid, gid, shell in [('0', '433', '/usr/sbin/nologin'),
+                                ('432', '0', '/usr/sbin/nologin'),
+                                ('432', '433', '/bin/bash')]:
+            with self.subTest(uid=uid, gid=gid, shell=shell):
+                (self.root / 'account').write_text(f'webboard-agent:x:{uid}:{gid}:Agent:/nonexistent:{shell}\n')
+                result = self.run_helpers('prepare_agent_account')
+                self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(call[0] == 'useradd' for call in self.account_calls()))
+
+    @unittest.skipUnless(Path('/run/dbus/system_bus_socket').is_socket() and
+                         Path('/run/systemd/system').is_dir(), 'Host systemd sockets needed')
+    def test_systemd_installer_sets_account_and_keeps_docker_group(self):
+        self.assert_ok(self.run_installer(self.answers('agent', systemd=True)))
+        agent = self.config()['services']['agent']
+        self.assertEqual(agent['user'], '432:433')
+        targets = {mount['target'] for mount in agent['volumes']}
+        self.assertIn('/run/dbus/system_bus_socket', targets)
+        self.assertIn('/run/systemd/system', targets)
+        if Path('/var/run/docker.sock').is_socket():
+            self.assertEqual(agent['group_add'], [str(Path('/var/run/docker.sock').stat().st_gid)])
+        self.assertIn('webboard-agent (432:433)', (self.deploy / 'NEXT-STEPS.txt').read_text())
+        before = (self.deploy / 'compose.yaml').read_bytes()
+        account_count = len(self.account_calls())
+        self.assert_ok(self.run_installer('', '--resume'))
+        self.assertEqual(before, (self.deploy / 'compose.yaml').read_bytes())
+        self.assertEqual(account_count, len(self.account_calls()))
+
+    @unittest.skipUnless(Path('/run/dbus/system_bus_socket').is_socket() and
+                         Path('/run/systemd/system').is_dir(), 'Host systemd sockets needed')
+    def test_account_creation_failure_stops_before_generating_deployment(self):
+        self.env['MOCK_ACCOUNT_CREATE_FAIL'] = '1'
+        result = self.run_installer(self.answers('agent', systemd=True))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Could not create the webboard-agent host account', result.stderr)
+        self.assertFalse((self.deploy / 'compose.yaml').exists())
+        self.assertFalse((self.root / 'network').exists())
+
+    @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_docker_only_agent_keeps_image_user_and_does_not_create_host_account(self):
+        self.assert_ok(self.run_installer(self.answers('agent')))
+        self.assertNotIn('user', self.config()['services']['agent'])
+        self.assertEqual(self.account_calls(), [])
 
     def test_ambiguous_ipv4_is_rejected(self):
         result = self.run_helpers('if valid_ipv4 010.0.0.1 || valid_cidr 010.0.0.0/8; then exit 1; fi; valid_ipv4 10.0.0.1; valid_cidr 10.0.0.0/8')

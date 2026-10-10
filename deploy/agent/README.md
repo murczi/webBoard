@@ -19,6 +19,48 @@ Use a Linux Docker host with Compose. Docker monitoring requires
 directory and save the Compose file there. No .NET SDK, repository clone, or
 `.env` file is needed for published images.
 
+## Host account for systemd monitoring
+
+Systemd discovery and status queries use the host system bus. D-Bus can reject a
+container UID that has no entry in the host account database, even when its socket
+is correctly mounted. The guided installer creates or reuses a non-login
+`webboard-agent` host account and sets the container's `user` to its numeric UID/GID.
+The host allocates these numbers; the installer does not reserve the image's UID
+1654. An existing account must have a non-root UID/GID and a non-login shell.
+Docker-only installations use the image's default user.
+
+For a manual installation or to repair an existing deployment, run on the agent
+host:
+
+```bash
+if ! getent passwd webboard-agent >/dev/null; then
+    sudo useradd --system --user-group --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin \
+        --comment 'webBoard host agent' webboard-agent
+fi
+getent passwd webboard-agent
+printf '    user: "%s:%s"\n' "$(id -u webboard-agent)" "$(id -g webboard-agent)"
+```
+
+Verify that the account has a non-root UID/GID and a shell such as
+`/usr/sbin/nologin` or `/bin/false`. Add the printed `user` line under the `agent`
+service in your deployment's Compose file, replacing any existing `user` line.
+Retain `group_add` for the Docker socket and ensure the chosen UID can read the
+mounted PFX. Installer-generated PFX files are mode 0644 and remain inside a
+private host directory.
+
+From that deployment directory, recreate just the agent and verify discovery:
+
+```bash
+docker compose up -d --force-recreate agent
+docker compose exec agent systemctl show docker.service --property=ActiveState
+```
+
+This preserves the existing certificates, tokens, and data. The host account is
+retained across updates and uninstall so its UID can be reused safely; remove it
+manually only when no deployment or host policy uses it. This account setup is
+needed for monitoring independently of the optional polkit rules for controls.
+
 ## Container deployment
 
 Use [compose.yaml](compose.yaml). Supply `Security__Tokens__0`, a certificate and
@@ -53,8 +95,8 @@ services:
       # Controls__Docker__0: my-game-server
       # Controls__Systemd__0: example.service
       # Enable/disable also require the host polkit setup in README.md.
-    # Optional: override to match a dedicated host account for systemd policy.
-    # user: "1654:1654"
+    # For systemd monitoring, set the dedicated host account's UID:GID (README.md).
+    # user: "HOST_UID:HOST_GID"
     # HOST_IP:HOST_PORT:CONTAINER_PORT; replace with this host's private/VPN IP.
     ports:
       - "10.0.0.30:5081:8443"
@@ -101,7 +143,7 @@ services:
 | `Kestrel__Certificates__Default__Path` | PFX path inside the container; match the TLS mount target. |
 | `Kestrel__Certificates__Default__Password` | Password used when exporting the PFX. |
 | `ports` | `HOST_IP:HOST_PORT:CONTAINER_PORT`; replace `10.0.0.30` with this host's private/VPN interface IP. The UI uses host port `5081`. |
-| `user` (optional) | Override numeric UID/GID to match a dedicated host account for systemd authorization. |
+| `user` | For systemd monitoring, use the dedicated host account's numeric UID/GID. Docker-only monitoring can use the image default. |
 | `group_add` | Numeric group owning the host Docker socket, from `stat -c '%g' /var/run/docker.sock`. |
 | TLS bind mount | Existing certificate at `./tls/agent.pfx`, relative to Compose; mounted read-only at `/tls/agent.pfx`. |
 | Docker socket bind mount | Access to host Docker discovery, status, and allowed operations. Socket access grants effective host-root authority to the agent process. |
@@ -221,11 +263,9 @@ allowlist is checked again on every operation, even if the caller bypasses the U
 ### One-time host authorization
 
 1. Install the host distribution's polkit package if it is not already installed.
-2. Create a dedicated non-login host account named `webboard-agent` whose numeric
-   UID matches the container user. The supplied .NET image defaults to UID 1654.
-   If that UID is already used, choose an unused UID and set `user: "UID:GID"` in
-   Compose to match the dedicated account. Retain Docker socket group access and
-   grant that UID read access to the TLS certificate.
+2. Use the dedicated `webboard-agent` host account from the
+   [monitoring setup](#host-account-for-systemd-monitoring). The guided installer
+   already creates this account and sets the container's numeric UID/GID.
 3. Install [50-webboard-agent.rules](host/50-webboard-agent.rules) as root at
    `/etc/polkit-1/rules.d/50-webboard-agent.rules` (mode 0644). Replace the example
    units/verbs with your services. This grants only those runtime controls.
@@ -294,5 +334,6 @@ and allowlists. Use `docker compose stop agent` to stop monitoring on this host.
 - **Health probe returns 401:** use a configured bearer token; `/health` also requires authentication.
 - **TLS verification fails:** match the certificate SAN to the UI URL and install the issuing CA in the UI trust store.
 - **Docker discovery fails:** check the socket exists and `group_add` matches its numeric host group.
-- **systemd queries or controls fail:** check the mounted host sockets, agent allowlist, matching host UID, and polkit policy. Enable/disable additionally needs the unit-file authorization described above.
+- **systemd discovery reports `Transport endpoint is not connected`:** if `docker compose exec --user 0 agent busctl --system list` succeeds while the default-user query fails, check the host account and container UID using the [monitoring setup](#host-account-for-systemd-monitoring). A UID without a host account can be rejected by D-Bus.
+- **systemd queries or controls fail:** check the mounted host sockets and matching host UID. Controls additionally require the agent allowlist and polkit policy; enable/disable needs the unit-file authorization described above.
 - **Buttons are unavailable:** grant **Modules → Operations**, refresh access, and allow the target on the agent.

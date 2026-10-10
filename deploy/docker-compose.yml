@@ -52,6 +52,9 @@ services:
   agent:
     image: shujidev/webboard-agent:latest
     restart: unless-stopped
+    # For systemd monitoring, set the dedicated host account's UID:GID.
+    # See agent/README.md; the image UID may not exist on the host.
+    # user: "HOST_UID:HOST_GID"
     environment:
       ASPNETCORE_URLS: https://+:8443
       Security__Tokens__0: "" # Required: independent random agent token (openssl rand -hex 32)

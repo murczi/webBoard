@@ -91,8 +91,10 @@ and additional private monitoring networks. Tokens and keys stay on the server.
 Agent certificates expire after 365 days; follow the
 [renewal guide](deploy/docs/agent-tls.md#certificates-created-by-the-guided-installer).
 
-Systemd monitoring mounts the host D-Bus socket; service controls remain disabled
-until you follow the [host policy guide](deploy/agent/README.md#one-time-host-authorization).
+Systemd monitoring creates or reuses a dedicated non-login `webboard-agent` host
+account, runs the container with its host-assigned UID/GID, and mounts the host
+D-Bus socket. Creating the account requires root or sudo. Service controls remain
+disabled until you follow the [host policy guide](deploy/agent/README.md#one-time-host-authorization).
 Docker monitoring mounts the host Docker socket and only explicitly listed
 containers receive control access.
 
@@ -147,8 +149,11 @@ connection-detail files, and volumes backed up privately. Lifecycle mutations
 are serialized; if a forcibly killed command leaves `.webboard-operation.lock`,
 confirm no command is running before removing that empty directory. Updates
 recreate file-mounted services and validate CA exports before replacing them.
-Removal keeps shared Docker images and any CA you imported into host/browser
-trust stores; remove those trust entries separately if no longer needed.
+Removal keeps shared Docker images, the `webboard-agent` host account, and any CA
+you imported into host/browser trust stores; remove the account and trust entries
+separately if no longer needed. Existing deployments can correct their systemd
+identity using the [host account guide](deploy/agent/README.md#host-account-for-systemd-monitoring)
+without reinstalling or replacing secrets.
 
 ## Install on separate machines
 
