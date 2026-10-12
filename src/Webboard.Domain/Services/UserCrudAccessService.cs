@@ -67,30 +67,12 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         if (submitted.Keys.Any(resource => !Resources.ContainsKey(resource)))
             throw new ArgumentException("An unknown CRUD resource was submitted.", nameof(access));
 
-        var existing = (await repository.GetByUserIdAsync(userId, cancellationToken))
-            .ToDictionary(item => item.Resource, StringComparer.Ordinal);
-
+        var normalized = new List<UserCrudAccessModel>();
         foreach (var resource in Resources) {
-            if (!submitted.TryGetValue(resource.Key, out var item)) {
-                if (existing.TryGetValue(resource.Key, out var removed))
-                    repository.Delete(removed);
-                continue;
-            }
-
-            item.UserId = userId;
-            PermissionResources.Normalize(item);
-
-            if (existing.TryGetValue(resource.Key, out var current)) {
-                item.Id = current.Id;
-                repository.Update(item);
-            }
-            else {
-                await repository.AddAsync(item, cancellationToken);
-            }
+            if (!submitted.TryGetValue(resource.Key, out var item)) continue;
+            item.UserId = userId; PermissionResources.Normalize(item); normalized.Add(item);
         }
-
-        repository.AddAuditLog(actorId, userId, auditComment);
-        await repository.SaveChangesAsync(cancellationToken);
+        await repository.ReplaceAccessAsync(userId, normalized, actorId, auditComment, cancellationToken);
     }
 
     private async Task RequireUserPermissionAsync(

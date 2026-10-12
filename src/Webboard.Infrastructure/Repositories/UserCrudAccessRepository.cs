@@ -99,6 +99,14 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             Actor = null!
         });
 
+    public async Task ReplaceAccessAsync(int userId, IReadOnlyCollection<UserCrudAccessModel> access, int actorId, string auditComment, CancellationToken cancellationToken) {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.UserCrudAccess.Where(x => x.UserId == userId).ExecuteDeleteAsync(cancellationToken);
+        dbContext.UserCrudAccess.AddRange(access.Select(item => { var entity = ToEntity(item); entity.Id = 0; return entity; }));
+        AddAuditLog(actorId, userId, auditComment);
+        await dbContext.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         await dbContext.SaveChangesAsync(cancellationToken);
 

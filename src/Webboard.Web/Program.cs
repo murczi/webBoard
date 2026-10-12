@@ -62,7 +62,8 @@ builder.Services.AddScoped<IModuleManagementService, AuthorizedModuleManagementS
 builder.Services.AddScoped<IResourceAuthorization, ResourceAuthorization>();
 builder.Services.AddScoped<ISessionAccessValidator, SessionAccessValidator>();
 builder.Services.AddScoped<JwtSessionService>();
-builder.Services.AddScoped<IModuleOperations, ModuleOperations>();
+builder.Services.AddScoped<IModuleOperationStore, PostgresModuleOperationStore>();
+builder.Services.AddScoped<IModuleOperations, ModuleOperationService>();
 builder.Services.AddHttpClient<IAgentOperationsClient, Webboard.Web.Services.AgentOperationsClient>(client => client.Timeout = TimeSpan.FromSeconds(310))
     .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
     .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());

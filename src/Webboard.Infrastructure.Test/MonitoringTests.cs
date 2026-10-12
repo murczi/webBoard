@@ -61,7 +61,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
         var model = Assert.Single(await new ModuleRepository(db).GetAllAsync());
         Assert.Empty(await new ModuleRepository(db).GetHostsAsync());
         Assert.False(ModuleEligibility.CanOperate(model));
-        Assert.Empty(await new ModuleOperations(db, new FakeAgent()).AllowedServiceOperationsAsync(model, default));
+        Assert.Empty(await new PostgresModuleOperations(db, new FakeAgent()).AllowedServiceOperationsAsync(model, default));
         var status = Assert.Single(await new MonitoringReader(db, options).LatestAsync(default));
         Assert.Equal("Monitoring paused: host is disabled", status.Health.Message);
     }
@@ -124,7 +124,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
     }
     [PostgresFact]
     public async Task OperationsRequireCurrentGrantAndPersistAuditWithoutDuplicateDispatch() {
-        await using var db = Context(); var agent = new FakeAgent(); var operations = new ModuleOperations(db, agent);
+        await using var db = Context(); var agent = new FakeAgent(); var operations = new PostgresModuleOperations(db, agent);
         var request = new ModuleOperationRequest(Guid.NewGuid(), moduleId, "restart");
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => operations.ExecuteAsync(actorId, request, default));
         await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
@@ -142,7 +142,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
         await using var db = Context();
         await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
         var agent = new FakeAgent { Result = new(false, "Verify target state", TimedOut: true) { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Timeout } };
-        var operations = new ModuleOperations(db, agent);
+        var operations = new PostgresModuleOperations(db, agent);
         var request = new ModuleOperationRequest(Guid.NewGuid(), moduleId, "restart");
         var first = await operations.ExecuteAsync(actorId, request, default);
         var replay = await operations.ExecuteAsync(actorId, request, default);
@@ -153,7 +153,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
     [PostgresFact]
     public async Task OnlyEnabledDockerAndSystemdModulesAcceptSupportedOperations() {
         await using var db = Context();
-        var agent = new FakeAgent(); var operations = new ModuleOperations(db, agent);
+        var agent = new FakeAgent(); var operations = new PostgresModuleOperations(db, agent);
         await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
         foreach (var action in new[] { "execute", "enable", "disable", "up", "down", "anything" })
             await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(actorId, new(Guid.NewGuid(), moduleId, action), default));

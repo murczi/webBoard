@@ -30,5 +30,7 @@ public interface IUserCrudAccessRepository {
 
     void AddAuditLog(int actorId, int userId, string auditComment);
 
+    Task ReplaceAccessAsync(int userId, IReadOnlyCollection<UserCrudAccessModel> access, int actorId, string auditComment, CancellationToken cancellationToken);
+
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
