@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
+using Domain.Model.Hosts;
 
 public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClient {
     public async Task<IReadOnlyList<DockerContainerModel>> GetContainersAsync(
@@ -69,12 +70,7 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         }
     }
 
-    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) {
-        if (!Uri.TryCreate(agentBaseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) ||
-            (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
-            throw new ArgumentException("Invalid agent URL.", nameof(agentBaseUrl));
-        return new Uri(baseUri, relativePath);
-    }
+    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) => AgentEndpoint.Create(agentBaseUrl).For(relativePath);
 
     private sealed record DockerContainerStatus(bool? IsHealthy, string? Message);
 }

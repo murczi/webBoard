@@ -69,20 +69,5 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
             throw new ArgumentException("Host name must be between 1 and 100 characters.", nameof(host));
     }
 
-    private static string NormalizeAgentBaseUrl(string value) {
-        var candidate = value.Trim();
-        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            !string.IsNullOrEmpty(uri.UserInfo) ||
-            !string.IsNullOrEmpty(uri.Query) ||
-            !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException(
-                "Agent base URL must be an absolute HTTP or HTTPS URL without credentials, a query, or a fragment.",
-                nameof(value));
-
-        var normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
-        if (normalized.Length > 2048)
-            throw new ArgumentException("Agent base URL cannot exceed 2048 characters.", nameof(value));
-        return normalized;
-    }
+    private static string NormalizeAgentBaseUrl(string value) => AgentEndpoint.Create(value).Value;
 }

@@ -1,6 +1,7 @@
 namespace Webboard.Web.Security;
 
 using System.Net;
+using Webboard.Domain.Model.Hosts;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 
@@ -66,23 +67,25 @@ public sealed class AgentAuthenticationHandler(IConfiguration configuration) : D
         return base.SendAsync(request, cancellationToken);
     }
 
-    public static bool Matches(string baseUrl, Uri uri) =>
-        Uri.TryCreate(baseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var configured) &&
-        string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment) &&
-        configured.Scheme == uri.Scheme && configured.IdnHost == uri.IdnHost && configured.Port == uri.Port &&
-        uri.AbsolutePath.StartsWith(configured.AbsolutePath, StringComparison.Ordinal);
+    public static bool Matches(string baseUrl, Uri uri) {
+        try { return AgentEndpoint.Create(baseUrl).Contains(uri); }
+        catch (ArgumentException) { return false; }
+    }
+
 }
 
 public static class OutboundSecurityValidation {
     public static void Validate(IConfiguration configuration) {
         var profiles = configuration.GetSection("Agents").Get<AgentConnection[]>() ?? [];
         foreach (var profile in profiles) {
-            if (!Uri.TryCreate(profile.BaseUrl, UriKind.Absolute, out var uri) ||
-                !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
-                profile.Token.Length < 32 || profile.Token.Any(char.IsWhiteSpace) ||
+            AgentEndpoint endpoint;
+            try { endpoint = AgentEndpoint.Create(profile.BaseUrl); }
+            catch (ArgumentException exception) { throw new InvalidOperationException("Invalid agent base URL.", exception); }
+            var uri = endpoint.BaseUri;
+            if (profile.Token.Length < 32 || profile.Token.Any(char.IsWhiteSpace) ||
                 uri.Scheme != "https" && !(uri.Scheme == "http" && profile.AllowHttpOverEncryptedTransport))
                 throw new InvalidOperationException("Agents entries require a valid base URL, a random token, and HTTPS or an explicit encrypted-transport exception.");
-            if (profiles.Count(candidate => AgentAuthenticationHandler.Matches(candidate.BaseUrl, new Uri(profile.BaseUrl.TrimEnd('/') + "/health"))) != 1)
+            if (profiles.Count(candidate => AgentAuthenticationHandler.Matches(candidate.BaseUrl, endpoint.For("health"))) != 1)
                 throw new InvalidOperationException("Agent base URLs must not overlap.");
         }
         foreach (var network in configuration.GetSection("Outbound:AllowedPrivateNetworks").Get<string[]>() ?? [])

@@ -1,9 +1,10 @@
 namespace Webboard.Web.Services;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
+using Domain.Model.Hosts;
 public sealed class AgentOperationsClient(HttpClient client) : IAgentOperationsClient {
     public async Task<ModuleOperationResult> ExecuteAsync(string baseUrl, Guid requestId, int moduleId, string kind, string target, string operation, CancellationToken cancellationToken) {
-        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl.TrimEnd('/') + "/operations") {
+        using var request = new HttpRequestMessage(HttpMethod.Post, AgentEndpoint.Create(baseUrl).For("operations")) {
             Content = JsonContent.Create(new { requestId, moduleId, kind, target, operation })
         };
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -33,7 +34,7 @@ public sealed class AgentOperationsClient(HttpClient client) : IAgentOperationsC
     public async Task<IReadOnlyList<string>> GetAllowedOperationsAsync(string baseUrl, string kind, string target, CancellationToken token) {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        using var response = await client.GetAsync($"{baseUrl.TrimEnd('/')}/capabilities?kind={Uri.EscapeDataString(kind)}&target={Uri.EscapeDataString(target)}", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        using var response = await client.GetAsync(AgentEndpoint.Create(baseUrl).For($"capabilities?kind={Uri.EscapeDataString(kind)}&target={Uri.EscapeDataString(target)}"), HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         response.EnsureSuccessStatusCode();
         return await AgentResponseReader.ReadAsync<List<string>>(response, timeout.Token, 16384);
     }

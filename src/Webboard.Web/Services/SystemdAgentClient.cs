@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
+using Domain.Model.Hosts;
 
 public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentClient {
     public async Task<IReadOnlyList<SystemdServiceModel>> GetServicesAsync(
@@ -75,12 +76,7 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
         }
     }
 
-    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) {
-        if (!Uri.TryCreate(agentBaseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) ||
-            (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
-            throw new ArgumentException("Invalid agent URL.", nameof(agentBaseUrl));
-        return new Uri(baseUri, relativePath);
-    }
+    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) => AgentEndpoint.Create(agentBaseUrl).For(relativePath);
 
     private sealed record SystemdServiceStatus(bool? IsHealthy, string? Message);
     private sealed record AgentProblem(string? Detail);

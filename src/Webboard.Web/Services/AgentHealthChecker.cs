@@ -39,17 +39,8 @@ public sealed class AgentHealthChecker(HttpClient httpClient) : IAgentHealthChec
     }
 
     private static bool TryBuildHealthUri(string value, out Uri? healthUri) {
-        healthUri = null;
-        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var baseUri) ||
-            (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps) ||
-            !string.IsNullOrEmpty(baseUri.UserInfo) ||
-            !string.IsNullOrEmpty(baseUri.Query) ||
-            !string.IsNullOrEmpty(baseUri.Fragment))
-            return false;
-
-        var builder = new UriBuilder(baseUri) { Path = $"{baseUri.AbsolutePath.TrimEnd('/')}/health" };
-        healthUri = builder.Uri;
-        return true;
+        try { healthUri = AgentEndpoint.Create(value).For("health"); return true; }
+        catch (ArgumentException) { healthUri = null; return false; }
     }
 
     private sealed class HealthResponse {
