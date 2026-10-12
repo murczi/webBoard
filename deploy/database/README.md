@@ -149,3 +149,8 @@ not mark it applied manually. Legacy actors become deleted, non-login archival u
 named `__legacy_actor_<id>`; null actors use archival ID 0. The first real registration
 still receives administrator grants. Existing real users, including deleted users,
 continue to prevent a second bootstrap. Validate against a restored backup first.
+
+Steam downgrades archive affected rows in `ModuleRollbackArchive` as JSON and
+convert those modules to disabled Http modules before removing type-specific
+columns. Back up first. Reapplying migrations does not automatically restore the
+old configuration; use the archived snapshot to explicitly reconfigure the module.

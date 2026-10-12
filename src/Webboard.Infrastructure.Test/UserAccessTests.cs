@@ -52,6 +52,19 @@ public sealed class UserAccessTests : IAsyncLifetime {
 
 
     [PostgresFact]
+    public async Task SteamDowngradeArchivesConfigurationAndDisablesDependentModules() {
+        await using var db = Context();
+        db.Modules.Add(new() { FriendlyName = "Steam", TypeId = 5, SteamServerAddress = "steam.test", SteamQueryPort = 27015,
+            IsEnabled = true, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+        await db.GetService<IMigrator>().MigrateAsync("20260929103515_AddModuleOperationsAndPermissions");
+        Assert.Equal(1, await db.Database.SqlQueryRaw<int>("SELECT \"TypeId\" AS \"Value\" FROM \"Modules\"").SingleAsync());
+        Assert.False(await db.Database.SqlQueryRaw<bool>("SELECT \"IsEnabled\" AS \"Value\" FROM \"Modules\"").SingleAsync());
+        Assert.Equal("steam.test", await db.Database.SqlQueryRaw<string>("SELECT \"Configuration\" ->> 'SteamServerAddress' AS \"Value\" FROM \"ModuleRollbackArchive\"").SingleAsync());
+        await db.Database.MigrateAsync();
+    }
+
+    [PostgresFact]
     public async Task PopulatedInitialSchemaPreservesModulesActorsAndAdministratorBootstrap() {
         await using var db = Context();
         await db.GetService<IMigrator>().MigrateAsync("20260711191703_Initial");
