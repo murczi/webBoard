@@ -29,11 +29,9 @@ a { text-underline-offset:3px; }
 .mode-badge { border:1px solid var(--workspace-line); padding:.35rem .8rem; border-radius:999px; font-size:.8rem; color:var(--workspace-accent); background:color-mix(in srgb,var(--workspace-accent) 8%,transparent); }
 .table { --bs-table-bg:transparent; }
 .table th,.table td { padding:1rem 1.25rem; }
-.table thead th,.host-list-card thead th,.user-list-card thead th { background:var(--bs-tertiary-bg); color:var(--workspace-muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; }
-.text-muted,.host-url,.module-health,.login-copy,.login-alternative { color:var(--workspace-muted) !important; }
-.module-type-badge,.host-actions-button,.user-actions-button,.module-actions-button { color:var(--workspace-muted); background:var(--bs-tertiary-bg); border-color:var(--workspace-line); }
+.table thead th { background:var(--bs-tertiary-bg); color:var(--workspace-muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; }
+.text-muted { color:var(--workspace-muted) !important; }
 .module-tile:hover { transform:none; box-shadow:0 4px 20px #0000000d !important; }
-.module-tile--hidden { opacity:1; }
 .btn-primary { background:#315ee7; border-color:#315ee7; }
 [data-bs-theme=dark] .btn-light { background:#283247; color:#e5eaf3; border-color:#354158; }
 [data-bs-theme=dark] .text-primary { color:#9ab4ff !important; }

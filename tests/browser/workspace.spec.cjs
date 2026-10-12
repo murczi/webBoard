@@ -101,3 +101,18 @@ test('a stale module form cannot overwrite a newer browser edit', async ({ page,
     await page.goto('/'); await expect(page.getByText('Newer browser edit')).toBeVisible();
     await stale.close();
 });
+
+test('error guidance and theme styles work in light and dark mode', async ({ page }) => {
+    await page.goto('/Error');
+    await expect(page.getByRole('heading', { name: "We couldn't complete your request" })).toBeVisible();
+    await expect(page.getByText('Development Mode')).toHaveCount(0);
+    for (const theme of ['light', 'dark']) {
+        await page.getByRole('combobox', { name: 'Color theme' }).selectOption(theme);
+        await expect(page.locator('html')).toHaveAttribute('data-bs-theme', theme);
+        const colors = await page.locator('.empty-state').evaluate(element => ({
+            background: getComputedStyle(element).backgroundColor,
+            token: getComputedStyle(element).getPropertyValue('--workspace-panel').trim()
+        }));
+        expect(colors.background).toBe(theme === 'dark' ? 'rgb(25, 31, 45)' : 'rgb(255, 255, 255)');
+    }
+});
