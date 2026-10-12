@@ -257,6 +257,17 @@ public class ModuleManagementServiceTests {
     [InlineData("example.SERVICE", false)] [InlineData("bad/name.service", false)]
     public void SystemdNamesFollowTheAgentAndInstallerContract(string name, bool valid) => Assert.Equal(valid, SystemdUnitName.IsValid(name));
 
+    [Fact]
+    public void ValidatedConfigurationOwnsItsInvariantsAndClearsInactiveFields() {
+        Assert.Throws<ArgumentException>(() => MinecraftConfiguration.Create("mc.test", null));
+        Assert.Throws<ArgumentException>(() => DockerConfiguration.Create(null, "container"));
+        var module = NewModule(); module.ServiceName = "old.service"; module.ContainerId = "old";
+        module.ApplyConfiguration(SteamConfiguration.Create("steam.test", 27015, true));
+        Assert.IsType<SteamConfiguration>(module.Configuration);
+        Assert.Null(module.ServiceName); Assert.Null(module.ContainerId); Assert.Null(module.HealthCheckUrl);
+        Assert.Equal(27015, module.SteamQueryPort);
+    }
+
     [Theory]
     [InlineData(true)] [InlineData(false)]
     public async Task UrlLengthLimitAppliesAfterPercentEncoding(bool management) {

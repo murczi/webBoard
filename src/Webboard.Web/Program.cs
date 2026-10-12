@@ -55,6 +55,7 @@ builder.Services.AddScoped<IHostRepository, HostRepository>();
 builder.Services.AddScoped<HostManagementService>();
 builder.Services.AddScoped<IHostManagementService, AuthorizedHostManagementService>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
+builder.Services.AddSingleton<ModuleConfigurationRegistry>();
 builder.Services.AddScoped<ModuleManagementService>();
 builder.Services.AddScoped<IModuleManagementService, AuthorizedModuleManagementService>();
 builder.Services.AddScoped<IResourceAuthorization, ResourceAuthorization>();
