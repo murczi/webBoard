@@ -14,7 +14,7 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
 
     public async Task<IReadOnlyList<int>> EnabledModuleIdsAsync(CancellationToken token) =>
         await db.Modules.AsNoTracking().Where(ModuleQueries.Monitorable).Where(x =>
-            !db.LatestMonitoring.Any(latest => latest.ModuleId == x.Id && latest.ConfigurationRevision == x.DateUpdated && latest.Timestamp > timeProvider.GetUtcNow().AddSeconds(-options.IntervalSeconds))).Select(x => x.Id).ToListAsync(token);
+            !db.LatestMonitoring.Any(latest => latest.ModuleId == x.Id && latest.ConfigurationVersion == x.MonitoringVersion && latest.Timestamp > timeProvider.GetUtcNow().AddSeconds(-options.IntervalSeconds))).Select(x => x.Id).ToListAsync(token);
     public async Task CollectAsync(int moduleId, CancellationToken token) {
         await using var transaction = await db.Database.BeginTransactionAsync(token);
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
@@ -26,7 +26,7 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         if (module is null || !ModuleQueries.IsMonitorable(module)) return;
         var latest = await db.LatestMonitoring.SingleOrDefaultAsync(x => x.ModuleId == moduleId, token);
         var now = timeProvider.GetUtcNow();
-        if (latest is not null && latest.ConfigurationRevision == module.DateUpdated && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
+        if (latest is not null && latest.ConfigurationVersion == module.MonitoringVersion && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
         var model = ModuleProjection.ToModel(module);
         ModuleHealthResult result;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -42,6 +42,7 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
             ConfigurationRevision = module.DateUpdated, State = result.State, PingMilliseconds = result.PingMilliseconds, Message = message });
         if (latest is null) { latest = new() { ModuleId = moduleId }; db.LatestMonitoring.Add(latest); }
         latest.Timestamp = now; latest.FreshUntil = now.AddSeconds(options.StaleSeconds); latest.ConfigurationRevision = module.DateUpdated;
+        latest.ConfigurationVersion = module.MonitoringVersion;
         latest.State = result.State; latest.PingMilliseconds = result.PingMilliseconds; latest.Message = message;
         latest.Details = result.Steam is null ? null : JsonSerializer.Serialize(result.Steam);
         await MonitoringBlockProjection.ObserveAsync(db, moduleId, now, latest.FreshUntil, result.State, message, token);

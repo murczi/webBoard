@@ -167,6 +167,28 @@ public sealed class MonitoringTests : IAsyncLifetime {
         Assert.False(await db.AuditLogs.AnyAsync(x => x.OperationId != null));
     }
     [PostgresFact]
+    public async Task MetadataEditsPreserveHealthButHostEndpointChangesAdvanceMonitoringVersion() {
+        await using var db = Context(); var checker = new FakeChecker();
+        var collector = new MonitoringCollector(db, checker, options);
+        await collector.CollectAsync(moduleId, default); db.ChangeTracker.Clear();
+        var modules = new ModuleRepository(db); var module = Assert.Single(await modules.GetAllAsync());
+        module.Name = "Renamed"; module.Description = "New description"; module.ManagementUrl = "https://manage.test";
+        module.DateUpdated = DateTimeOffset.UtcNow;
+        Assert.True(await modules.UpdateAsync(module, actorId, "Metadata"));
+        var hosts = new HostRepository(db); var host = Assert.Single(await hosts.GetAllAsync());
+        host.Name = "Renamed host"; host.DateUpdated = DateTimeOffset.UtcNow;
+        Assert.True(await hosts.UpdateAsync(host, actorId, "Metadata"));
+        Assert.Single(await db.LatestMonitoring.ToListAsync()); Assert.Single(await db.MonitoringResults.ToListAsync());
+        Assert.Empty(await collector.EnabledModuleIdsAsync(default));
+        await collector.CollectAsync(moduleId, default); Assert.Equal(1, checker.Calls);
+        host.AgentBaseUrl = "https://replacement.test"; host.DateUpdated = DateTimeOffset.UtcNow;
+        Assert.True(await hosts.UpdateAsync(host, actorId, "Endpoint"));
+        db.ChangeTracker.Clear(); Assert.Empty(await db.LatestMonitoring.ToListAsync());
+        Assert.Equal(1L, (await db.Modules.SingleAsync()).MonitoringVersion);
+        await collector.CollectAsync(moduleId, default); Assert.Equal(2, checker.Calls);
+    }
+
+    [PostgresFact]
     public async Task ConfigurationEditInvalidatesLatestAndCutsHistory() {
         await using var db = Context();
         await new MonitoringCollector(db, new FakeChecker(), options).CollectAsync(moduleId, default);

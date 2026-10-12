@@ -172,6 +172,9 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<DateTimeOffset>("ConfigurationRevision")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long?>("ConfigurationVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Details")
                         .HasColumnType("jsonb");
 
@@ -251,6 +254,11 @@ namespace Webboard.Infrastructure.Configuration.Migrations
 
                     b.Property<int?>("MinecraftServerPort")
                         .HasColumnType("integer");
+
+                    b.Property<long>("MonitoringVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.Property<string>("ServiceName")
                         .HasMaxLength(256)

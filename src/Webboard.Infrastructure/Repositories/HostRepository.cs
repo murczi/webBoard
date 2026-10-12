@@ -67,7 +67,13 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         string auditComment,
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag).Select(x => x.Id).ToListAsync(cancellationToken);
+        var current = await dbContext.Hosts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == host.Id && !x.DeletionFlag, cancellationToken);
+        if (current is null) return false;
+        var lifecycleChanged = current.IsEnabled != host.IsEnabled;
+        var endpointChanged = current.AgentBaseUrl != host.AgentBaseUrl;
+        var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag &&
+            (lifecycleChanged || (endpointChanged && x.Type != null && (x.Type.Name == "Docker" || x.Type.Name == "Systemd"))))
+            .Select(x => x.Id).ToListAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
         var updated = await TranslateNameConflictAsync(async () => await dbContext.Hosts
             .Where(entity => entity.Id == host.Id && entity.Version == host.Version && !entity.DeletionFlag)
@@ -84,6 +90,8 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             return false;
         }
 
+        await dbContext.Modules.Where(x => dependentModules.Contains(x.Id)).ExecuteUpdateAsync(
+            setters => setters.SetProperty(x => x.MonitoringVersion, x => x.MonitoringVersion + 1), cancellationToken);
         await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, timeProvider, cancellationToken);
         AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
@@ -104,12 +112,16 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             .Where(host => host.Id == hostId && !host.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
+                    .SetProperty(host => host.Version, host => host.Version + 1)
+                    .SetProperty(host => host.DateUpdated, timeProvider.GetUtcNow())
                     .SetProperty(host => host.DeletionFlag, true)
                     .SetProperty(host => host.IsEnabled, false),
                 cancellationToken) > 0;
         if (!deleted)
             return false;
 
+        await dbContext.Modules.Where(x => dependentModules.Contains(x.Id)).ExecuteUpdateAsync(
+            setters => setters.SetProperty(x => x.MonitoringVersion, x => x.MonitoringVersion + 1), cancellationToken);
         await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, timeProvider, cancellationToken);
         AddAuditLog(hostId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));

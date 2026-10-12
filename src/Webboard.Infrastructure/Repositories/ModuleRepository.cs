@@ -67,11 +67,16 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         CancellationToken cancellationToken = default) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, [module.Id], cancellationToken);
+        var current = await dbContext.Modules.AsNoTracking().SingleOrDefaultAsync(x => x.Id == module.Id && !x.DeletionFlag, cancellationToken);
+        if (current is null) return false;
+        var monitoringChanged = MonitoringConfigurationFingerprint.From(ModuleProjection.ToModel(current)) != MonitoringConfigurationFingerprint.From(module);
+        var monitoringVersion = current.MonitoringVersion + (monitoringChanged ? 1 : 0);
         var updated = await dbContext.Modules
             .Where(entity => entity.Id == module.Id && entity.Version == module.Version && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(entity => entity.Version, entity => entity.Version + 1)
+                    .SetProperty(entity => entity.MonitoringVersion, monitoringVersion)
                     .SetProperty(entity => entity.TypeId, module.TypeId)
                     .SetProperty(entity => entity.HostId, module.HostId)
                     .SetProperty(entity => entity.FriendlyName, module.Name)
@@ -93,7 +98,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             return false;
         }
 
-        await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], timeProvider, cancellationToken);
+        if (monitoringChanged) await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], timeProvider, cancellationToken);
         AddAuditLog(module.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -112,6 +117,8 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             .Where(module => module.Id == moduleId && !module.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
+                    .SetProperty(module => module.Version, module => module.Version + 1)
+                    .SetProperty(module => module.MonitoringVersion, module => module.MonitoringVersion + 1)
                     .SetProperty(module => module.DeletionFlag, true)
                     .SetProperty(module => module.IsEnabled, false)
                     .SetProperty(module => module.DateUpdated, timeProvider.GetUtcNow()),

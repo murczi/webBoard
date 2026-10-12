@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class ModuleEntity {
+    public long MonitoringVersion { get; set; }
     public long Version { get; set; }
     public int Id { get; set; }
 
