@@ -251,6 +251,16 @@ public class ModuleManagementServiceTests {
         Assert.Contains("100", exception.Message);
     }
 
+    [Fact]
+    public async Task MinecraftRequiresAnExplicitPortEvenWithoutBrowserValidation() {
+        var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 4, ValidTypeName = "Minecraft" });
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(new() { Name = "Minecraft", TypeId = 4,
+            MinecraftServerAddress = "mc.example.test" }, 1, "Create"));
+    }
+    [Theory]
+    [InlineData("invalid:address")] [InlineData("name@host")] [InlineData("https://server.test")]
+    public void GameServerAddressesRejectNonHostValues(string value) => Assert.False(ServerAddress.IsValid(value));
+
     private static ModuleModel NewModule() => new()
     {
         Name = "Example site",
