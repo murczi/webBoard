@@ -55,7 +55,9 @@
     document.getElementById('history-show').onclick = () => { hidden.clear(); setVisibility(); save(); void refresh(); };
     document.getElementById('history-hide').onclick = () => { rows.forEach(row => hidden.add(row.dataset.historyModule)); setVisibility(); save(); };
     async function get(handler, parameters, signal) {
-        const response = await fetch('/MonitoringHistory?' + new URLSearchParams({ handler, ...parameters }), { cache: 'no-store', signal, headers: { Accept: 'application/json' } });
+        const url = new URL(root.dataset.endpoint, window.location.href);
+        url.search = new URLSearchParams({ handler, ...parameters });
+        const response = await fetch(url, { cache: 'no-store', signal, headers: { Accept: 'application/json' } });
         if (!response.ok || response.redirected) throw new Error('History refresh failed. Existing display may be stale.');
         return response.json();
     }

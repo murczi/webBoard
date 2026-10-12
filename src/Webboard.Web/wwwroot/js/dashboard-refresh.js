@@ -7,7 +7,7 @@
         if (document.hidden || active) return;
         active = true;
         try {
-            const response = await fetch('/?handler=Status', { headers: { Accept: 'application/json' }, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+            const response = await fetch(grid.dataset.statusUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: AbortSignal.timeout(10000) });
             if (!response.ok || response.redirected) throw new Error();
             const statuses = await response.json();
             const ids = new Set(statuses.map(status => String(status.moduleId)));

@@ -329,3 +329,5 @@ and modules and changes their permissions. CI supplies an isolated database.
 # Configuration precedence
 
 Both application startup and design-time EF commands preserve environment variables already supplied by the shell or container. A discovered `.env` file supplies only missing values. Run migration commands with an explicit `ConnectionStrings__WebboardDatabase` when targeting a particular database.
+
+Deployments beneath a URL prefix can set `Application__PathBase=/board`. The proxy must preserve that prefix when forwarding requests. Links, authentication redirects, forms, dashboard refresh, history requests, and static assets use that base. Run the browser suite with `WEBBOARD_BROWSER_PATH_BASE=/board` against a fresh disposable database to verify this deployment mode.

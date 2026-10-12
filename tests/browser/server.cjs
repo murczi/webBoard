@@ -9,6 +9,7 @@ const upstreamPort = Number(process.env.WEBBOARD_BROWSER_UPSTREAM_PORT || 19080)
 const proxyPort = Number(process.env.WEBBOARD_BROWSER_PROXY_PORT || 19443);
 const env = { ...process.env, ConnectionStrings__WebboardDatabase: connection,
     Authentication__Jwt__SigningKey: 'browser-tests-only-signing-key-0123456789abcdef',
+    Application__PathBase: process.env.WEBBOARD_BROWSER_PATH_BASE || '',
     Monitoring__Enabled: 'false', ASPNETCORE_ENVIRONMENT: 'Production',
     ASPNETCORE_URLS: `http://127.0.0.1:${upstreamPort}`, ReverseProxy__KnownProxies__0: '127.0.0.1' };
 execFileSync('dotnet', [app, '--migrate'], { env, cwd: temp, stdio: 'inherit' });

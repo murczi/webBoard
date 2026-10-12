@@ -136,7 +136,7 @@ builder.Services
                     var returnUrl = context.Request.PathBase + context.Request.Path +
                                     context.Request.QueryString;
                     context.Response.Redirect(
-                        $"/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}");
+                        $"{context.Request.PathBase}/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}");
                 }
 
                 return Task.CompletedTask;
@@ -156,6 +156,15 @@ builder.Services.AddExceptionHandler<Webboard.Web.Services.ResourceExceptionHand
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
+
+var pathBase = builder.Configuration["Application:PathBase"];
+if (!string.IsNullOrEmpty(pathBase)) {
+    if (!pathBase.StartsWith('/') || pathBase.EndsWith('/') || pathBase.Contains("//") ||
+        pathBase.Split('/').Any(segment => segment is "." or "..") ||
+        pathBase.Any(character => char.IsWhiteSpace(character) || character is '?' or '#' or '\\'))
+        throw new InvalidOperationException("Application:PathBase must be a path such as /board without a trailing slash.");
+    app.UsePathBase(pathBase);
+}
 
 // Restore the original scheme only from configured trusted proxies.
 app.UseForwardedHeaders();

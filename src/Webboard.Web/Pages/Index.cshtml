@@ -53,7 +53,7 @@ else if (Model.ModuleTiles.Count == 0) {
     </div>
 }
 else {
-    <div class="module-grid" data-module-grid data-order-account="@Model.CurrentUserId">
+    <div class="module-grid" data-module-grid data-status-url="@Url.Page("/Index", "Status")" data-order-account="@Model.CurrentUserId">
         @foreach (var tile in Model.ModuleTiles) {
             var dotClass = tile.Health.State switch {
                 ModuleHealthState.Healthy => "module-health-dot--healthy",
