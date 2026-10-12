@@ -145,7 +145,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
             !string.IsNullOrEmpty(uri.UserInfo))
             throw new ArgumentException($"{label} must be an absolute HTTP or HTTPS URL without credentials.");
-        if (candidate.Length > 2048)
+        if (uri.AbsoluteUri.Length > 2048)
             throw new ArgumentException($"{label} cannot exceed 2048 characters.");
         return uri.AbsoluteUri;
     }

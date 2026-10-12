@@ -257,6 +257,16 @@ public class ModuleManagementServiceTests {
     [InlineData("example.SERVICE", false)] [InlineData("bad/name.service", false)]
     public void SystemdNamesFollowTheAgentAndInstallerContract(string name, bool valid) => Assert.Equal(valid, SystemdUnitName.IsValid(name));
 
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task UrlLengthLimitAppliesAfterPercentEncoding(bool management) {
+        var service = new ModuleManagementService(new FakeModuleRepository());
+        var module = NewModule();
+        var url = "https://example.test/" + new string('é', 1000);
+        if (management) module.ManagementUrl = url; else module.HealthCheckUrl = url;
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(module, 1, "Create"));
+    }
+
     [Fact]
     public async Task MinecraftRequiresAnExplicitPortEvenWithoutBrowserValidation() {
         var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 4, ValidTypeName = "Minecraft" });
