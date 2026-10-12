@@ -5,6 +5,7 @@ using Configuration.Entities;
 using Domain.Interfaces.Repositories;
 using Domain.Model.UserCrudAccess;
 using Microsoft.EntityFrameworkCore;
+using Domain.Services;
 
 public class UserCrudAccessRepository(WebboardDbContext dbContext)
     : IUserCrudAccessRepository {
@@ -66,7 +67,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             .OrderBy(access => access.Resource)
             .Select(access => new UserCrudAccessModel
             {
-                Id = access.Id,
+                Id = access.Id, PermissionVersion = access.User.PermissionVersion,
                 UserId = access.UserId,
                 Resource = access.Resource,
                 CanOperate = access.CanOperate,
@@ -99,8 +100,18 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             Actor = null!
         });
 
-    public async Task ReplaceAccessAsync(int userId, IReadOnlyCollection<UserCrudAccessModel> access, int actorId, string auditComment, CancellationToken cancellationToken) {
+    public Task<long?> GetPermissionVersionAsync(int userId, CancellationToken cancellationToken) => dbContext.Users.AsNoTracking()
+        .Where(x => x.Id == userId && !x.DeletionFlag).Select(x => (long?)x.PermissionVersion).SingleOrDefaultAsync(cancellationToken);
+
+    public async Task ReplaceAccessAsync(int userId, IReadOnlyCollection<UserCrudAccessModel> access, int actorId, string auditComment, long expectedVersion, CancellationToken cancellationToken) {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var updated = await dbContext.Users.Where(x => x.Id == userId && !x.DeletionFlag && x.PermissionVersion == expectedVersion)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PermissionVersion, x => x.PermissionVersion + 1)
+                .SetProperty(x => x.DateUpdated, timeProvider.GetUtcNow()), cancellationToken);
+        if (updated == 0) {
+            if (await UserExistsAsync(userId, cancellationToken)) throw new ResourceConflictException();
+            throw new KeyNotFoundException();
+        }
         await dbContext.UserCrudAccess.Where(x => x.UserId == userId).ExecuteDeleteAsync(cancellationToken);
         dbContext.UserCrudAccess.AddRange(access.Select(item => { var entity = ToEntity(item); entity.Id = 0; return entity; }));
         AddAuditLog(actorId, userId, auditComment);

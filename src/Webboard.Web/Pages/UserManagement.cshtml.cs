@@ -32,6 +32,9 @@ public class UserManagementModel(
     public bool CanReadLogs => AuditLogAccess.HasRead(User);
 
     [BindProperty]
+    public long? PermissionVersion { get; set; }
+
+    [BindProperty]
     public List<UserCrudAccessModel> Access { get; set; } = [];
 
     [BindProperty]
@@ -60,6 +63,7 @@ public class UserManagementModel(
         CancellationToken cancellationToken) {
         if (!CanUpdateUsers)
             return Forbid();
+        if (PermissionVersion is null) return BadRequest(new { message = "Reload the permission editor before saving." });
         if (CurrentUserId is not int actorId)
             return Challenge();
         if (!ModelState.IsValid || !IsValidAuditComment()) {
@@ -74,8 +78,12 @@ public class UserManagementModel(
                 Access,
                 actorId,
                 AuditComment,
+                PermissionVersion.Value,
                 cancellationToken);
             TempData["StatusMessage"] = "CRUD access updated.";
+        }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
         }
         catch (UnauthorizedAccessException) {
             return Forbid();

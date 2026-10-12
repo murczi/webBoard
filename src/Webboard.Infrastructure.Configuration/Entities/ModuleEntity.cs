@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class ModuleEntity {
+    public long Version { get; set; }
     public int Id { get; set; }
 
     public int TypeId { get; set; }

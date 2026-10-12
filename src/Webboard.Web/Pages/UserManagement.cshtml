@@ -129,6 +129,7 @@
                     <div asp-validation-summary="All" class="text-danger" role="alert"></div>
                     @if (Model.RetryUserId.HasValue && TempData.Peek("ErrorMessage") is string formError) { <div class="alert alert-danger">@formError</div> }
                     <input type="hidden" name="userId" id="access-user-id"/>
+                    <input asp-for="PermissionVersion" type="hidden" id="access-permission-version"/>
                     <div id="access-loading" class="text-center text-muted py-5" role="status">
                         Loading access settings&hellip;
                     </div>
@@ -272,6 +273,7 @@
 
                         const access = await response.json();
                         if (!requests.isCurrent(request, userIdInput.value)) return;
+                        document.getElementById('access-permission-version').value = access[0]?.permissionVersion ?? 0;
                         renderAccess(access);
                         loadedUserId = request.target;
                         fields.classList.remove('d-none');
@@ -290,6 +292,7 @@
             const retryUserId = @Json.Serialize(Model.RetryUserId);
             if (retryUserId) {
                 userIdInput.value = retryUserId;
+                document.getElementById('access-permission-version').value = @Json.Serialize(Model.PermissionVersion);
                 loadedUserId = String(retryUserId);
                 userLabel.textContent = @Json.Serialize(Model.RetryUserName);
                 renderAccess(@Json.Serialize(Model.Access));

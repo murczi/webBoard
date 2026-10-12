@@ -13,6 +13,7 @@ public class ModuleModel {
         SteamQueryPort = (configuration as SteamConfiguration)?.Endpoint.Port;
         SteamQueryPlayers = (configuration as SteamConfiguration)?.QueryPlayers ?? false;
     }
+    public long Version { get; set; }
     public int Id { get; set; }
     public int TypeId { get; set; }
     public string TypeName { get; set; } = string.Empty;

@@ -73,6 +73,9 @@ public class ModuleManagementModel(
             await modules.AddAsync(Module.ToModel(), actorId, "Created module.", cancellationToken);
             TempData["StatusMessage"] = "Module added.";
         }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
+        }
         catch (ArgumentException exception) {
             TempData["ErrorMessage"] = exception.Message;
         }
@@ -96,6 +99,9 @@ public class ModuleManagementModel(
             TempData[updated ? "StatusMessage" : "ErrorMessage"] = updated
                 ? "Module updated."
                 : "The selected module no longer exists.";
+        }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
         }
         catch (ArgumentException exception) {
             TempData["ErrorMessage"] = exception.Message;
@@ -229,6 +235,7 @@ public class ModuleManagementModel(
 
     public class ModuleInputModel {
         public int Id { get; set; }
+        [Range(0, long.MaxValue)] public long Version { get; set; }
 
         [Required, StringLength(100)]
         public string Name { get; set; } = string.Empty;
@@ -279,7 +286,7 @@ public class ModuleManagementModel(
 
         public ModuleModel ToModel() => new()
         {
-            Id = Id,
+            Id = Id, Version = Version,
             Name = Name,
             Description = Description,
             HostId = HostId,

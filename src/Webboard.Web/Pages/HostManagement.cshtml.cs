@@ -149,6 +149,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
 
     public class HostInputModel {
         public int Id { get; set; }
+        [Range(0, long.MaxValue)] public long Version { get; set; }
 
         [Required, StringLength(100)]
         public string Name { get; set; } = string.Empty;
@@ -162,7 +163,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
 
         public HostModel ToModel() => new()
         {
-            Id = Id,
+            Id = Id, Version = Version,
             Name = Name,
             AgentBaseUrl = AgentBaseUrl,
             IsEnabled = IsEnabled

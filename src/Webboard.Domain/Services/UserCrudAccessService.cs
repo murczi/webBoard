@@ -37,15 +37,16 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         var persisted = (await repository.GetByUserIdAsync(userId, cancellationToken))
             .ToDictionary(access => access.Resource, StringComparer.Ordinal);
 
+        var version = await repository.GetPermissionVersionAsync(userId, cancellationToken) ?? throw new KeyNotFoundException();
         return Resources.Select(resource => {
             if (persisted.TryGetValue(resource.Key, out var access)) {
-                access.IsReadOnlyResource = resource.Value;
+                access.IsReadOnlyResource = resource.Value; access.PermissionVersion = version;
                 return access;
             }
 
             return new UserCrudAccessModel
             {
-                UserId = userId,
+                UserId = userId, PermissionVersion = version,
                 Resource = resource.Key,
                 IsReadOnlyResource = resource.Value
             };
@@ -57,6 +58,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         IReadOnlyCollection<UserCrudAccessModel> access,
         int actorId,
         string auditComment,
+        long expectedVersion,
         CancellationToken cancellationToken = default) {
         await RequireUserPermissionAsync(actorId, delete: false, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
@@ -72,7 +74,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
             if (!submitted.TryGetValue(resource.Key, out var item)) continue;
             item.UserId = userId; PermissionResources.Normalize(item); normalized.Add(item);
         }
-        await repository.ReplaceAccessAsync(userId, normalized, actorId, auditComment, cancellationToken);
+        await repository.ReplaceAccessAsync(userId, normalized, actorId, auditComment, expectedVersion, cancellationToken);
     }
 
     private async Task RequireUserPermissionAsync(

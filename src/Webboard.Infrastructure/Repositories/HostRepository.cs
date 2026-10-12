@@ -6,6 +6,7 @@ using Domain.Interfaces.Repositories;
 using Domain.Model.Hosts;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Domain.Services;
 
 public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
     private readonly TimeProvider timeProvider = TimeProvider.System;
@@ -17,7 +18,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             .OrderBy(host => host.Name)
             .Select(host => new HostModel
             {
-                Id = host.Id,
+                Id = host.Id, Version = host.Version, DateUpdated = host.DateUpdated,
                 Name = host.Name,
                 AgentBaseUrl = host.AgentBaseUrl,
                 IsEnabled = host.IsEnabled,
@@ -44,7 +45,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             AgentBaseUrl = host.AgentBaseUrl,
             IsEnabled = host.IsEnabled,
             DeletionFlag = false,
-            DateCreated = host.DateCreated
+            DateCreated = host.DateCreated, DateUpdated = host.DateUpdated == default ? host.DateCreated : host.DateUpdated
         };
         dbContext.Hosts.Add(entity);
         dbContext.AuditLogs.Add(new AuditLogEntity
@@ -57,7 +58,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             Actor = null!
         });
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
-        host.Id = entity.Id;
+        host.Id = entity.Id; host.Version = entity.Version; host.DateUpdated = entity.DateUpdated;
     }
 
     public async Task<bool> UpdateAsync(
@@ -69,20 +70,25 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag).Select(x => x.Id).ToListAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
         var updated = await TranslateNameConflictAsync(async () => await dbContext.Hosts
-            .Where(entity => entity.Id == host.Id && !entity.DeletionFlag)
+            .Where(entity => entity.Id == host.Id && entity.Version == host.Version && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
+                    .SetProperty(entity => entity.Version, entity => entity.Version + 1)
+                    .SetProperty(entity => entity.DateUpdated, host.DateUpdated)
                     .SetProperty(entity => entity.Name, host.Name)
                     .SetProperty(entity => entity.AgentBaseUrl, host.AgentBaseUrl)
                     .SetProperty(entity => entity.IsEnabled, host.IsEnabled),
                 cancellationToken)) > 0;
-        if (!updated)
+        if (!updated) {
+            if (await dbContext.Hosts.AnyAsync(x => x.Id == host.Id && !x.DeletionFlag, cancellationToken)) throw new ResourceConflictException();
             return false;
+        }
 
         await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, timeProvider, cancellationToken);
         AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
+        host.Version++;
         return true;
     }
 

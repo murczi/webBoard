@@ -6,7 +6,7 @@ using Domain.Model.Modules;
 public static class ModuleProjection {
     public static readonly Expression<Func<ModuleEntity, ModuleModel>> Read = module => new ModuleModel
             {
-                Id = module.Id,
+                Id = module.Id, Version = module.Version,
                 TypeId = module.TypeId,
                 TypeName = module.Type != null ? module.Type.Name : string.Empty,
                 HostId = module.HostId,

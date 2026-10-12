@@ -85,6 +85,7 @@
                         <div asp-validation-summary="All" class="text-danger" role="alert"></div>
                         @if (Model.ReopenHandler is not null && TempData.Peek("ErrorMessage") is string formError) { <div class="alert alert-danger" data-module-form-error>@formError</div> }
                         <input asp-for="Module.Id" type="hidden"/>
+                        <input asp-for="Module.Version" type="hidden"/>
                         <div class="row g-3">
                             <div class="col-12">
                                 <label asp-for="Module.Name" class="form-label"></label>

@@ -129,6 +129,9 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<DateTimeOffset>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("DeletionFlag")
                         .HasColumnType("boolean");
 
@@ -146,6 +149,12 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasComputedColumnSql("lower(\"Name\")", true);
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("Id");
 
@@ -259,6 +268,12 @@ namespace Webboard.Infrastructure.Configuration.Migrations
 
                     b.Property<int>("TypeId")
                         .HasColumnType("integer");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("Id");
 
@@ -473,6 +488,12 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<long>("PermissionVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("Id");
 

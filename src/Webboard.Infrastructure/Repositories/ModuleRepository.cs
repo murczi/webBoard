@@ -4,6 +4,7 @@ using Configuration;
 using Configuration.Entities;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Modules;
+using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
 public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
@@ -56,7 +57,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             Actor = null!
         });
         await dbContext.SaveChangesAsync(cancellationToken);
-        module.Id = entity.Id;
+        module.Id = entity.Id; module.Version = entity.Version;
     }
 
     public async Task<bool> UpdateAsync(
@@ -67,9 +68,10 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, [module.Id], cancellationToken);
         var updated = await dbContext.Modules
-            .Where(entity => entity.Id == module.Id && !entity.DeletionFlag)
+            .Where(entity => entity.Id == module.Id && entity.Version == module.Version && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
+                    .SetProperty(entity => entity.Version, entity => entity.Version + 1)
                     .SetProperty(entity => entity.TypeId, module.TypeId)
                     .SetProperty(entity => entity.HostId, module.HostId)
                     .SetProperty(entity => entity.FriendlyName, module.Name)
@@ -86,13 +88,16 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                     .SetProperty(entity => entity.IsEnabled, module.IsEnabled)
                     .SetProperty(entity => entity.DateUpdated, module.DateUpdated),
                 cancellationToken) > 0;
-        if (!updated)
+        if (!updated) {
+            if (await dbContext.Modules.AnyAsync(x => x.Id == module.Id && !x.DeletionFlag, cancellationToken)) throw new ResourceConflictException();
             return false;
+        }
 
         await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], timeProvider, cancellationToken);
         AddAuditLog(module.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        module.Version++;
         return true;
     }
 

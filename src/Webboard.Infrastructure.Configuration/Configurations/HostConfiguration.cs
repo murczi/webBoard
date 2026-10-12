@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 public class HostConfiguration : IEntityTypeConfiguration<HostEntity> {
     public void Configure(EntityTypeBuilder<HostEntity> builder) {
+        builder.Property(host => host.Version).HasDefaultValue(0L).IsConcurrencyToken();
         builder.ToTable("Hosts");
 
         builder.HasKey(keyExpression: host => host.Id);

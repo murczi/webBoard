@@ -86,3 +86,18 @@ test('HTTPS cookies, module editing, permission races and immediate session revo
     expect(errors).toEqual([]);
     await contextA.close(); await contextB.close();
 });
+
+test('a stale module form cannot overwrite a newer browser edit', async ({ page, context }) => {
+    await page.goto('/Login'); await page.locator('#Input_UserName').fill('browser-admin'); await page.locator('#Input_Password').fill(password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const stale = await context.newPage();
+    await page.goto('/ModuleManagement'); await stale.goto('/ModuleManagement');
+    await page.getByRole('button', { name: 'Edit module', exact: true }).click();
+    await stale.getByRole('button', { name: 'Edit module', exact: true }).click();
+    await page.locator('#Module_Description').fill('Newer browser edit'); await page.locator('#module-audit-comment').fill('First edit'); await page.locator('#save-module').click();
+    await expect(page.locator('.alert-success')).toContainText('Module updated');
+    await stale.locator('#Module_Description').fill('Stale browser edit'); await stale.locator('#module-audit-comment').fill('Stale edit'); await stale.locator('#save-module').click();
+    await expect(stale.locator('.alert-danger').first()).toContainText('changed since the form was opened');
+    await page.goto('/'); await expect(page.getByText('Newer browser edit')).toBeVisible();
+    await stale.close();
+});

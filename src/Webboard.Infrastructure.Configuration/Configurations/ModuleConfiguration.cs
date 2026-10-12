@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 public class ModuleConfiguration : IEntityTypeConfiguration<ModuleEntity> {
     public void Configure(EntityTypeBuilder<ModuleEntity> builder) {
+        builder.Property(module => module.Version).HasDefaultValue(0L).IsConcurrencyToken();
         builder.ToTable("Modules");
 
         builder.HasKey(keyExpression: module => module.Id);

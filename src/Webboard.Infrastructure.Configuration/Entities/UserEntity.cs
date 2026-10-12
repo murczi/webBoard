@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class UserEntity {
+    public long PermissionVersion { get; set; }
     public int Id { get; set; }
 
     public required string Name { get; set; }

@@ -211,7 +211,7 @@
             this.form.querySelector('[data-module-form-error]')?.remove();
             this.form.querySelectorAll('.input-validation-error').forEach(input => input.classList.remove('input-validation-error'));
             this.setMode(Boolean(data));
-            const defaults = { Id: '0', MinecraftServerPort: '25565', SteamQueryPort: '27015' };
+            const defaults = { Id: '0', Version: '0', MinecraftServerPort: '25565', SteamQueryPort: '27015' };
             for (const input of this.form.querySelectorAll('[name^="Module."]')) {
                 const name = input.name.slice('Module.'.length);
                 const key = name[0].toLowerCase() + name.slice(1);
