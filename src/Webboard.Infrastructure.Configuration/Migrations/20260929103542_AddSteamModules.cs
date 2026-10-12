@@ -48,6 +48,15 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                 name: "CK_Modules_SteamPort",
                 table: "Modules");
 
+            migrationBuilder.Sql("""
+                CREATE TABLE IF NOT EXISTS "ModuleRollbackArchive" (
+                    "ModuleId" integer PRIMARY KEY, "ArchivedAt" timestamptz NOT NULL, "Configuration" jsonb NOT NULL);
+                INSERT INTO "ModuleRollbackArchive" ("ModuleId", "ArchivedAt", "Configuration")
+                SELECT m."Id", now(), to_jsonb(m) FROM "Modules" m WHERE m."TypeId" = 5
+                ON CONFLICT ("ModuleId") DO UPDATE SET "ArchivedAt" = EXCLUDED."ArchivedAt", "Configuration" = EXCLUDED."Configuration";
+                UPDATE "Modules" SET "TypeId" = 1, "IsEnabled" = false WHERE "TypeId" = 5;
+                """);
+
             migrationBuilder.DeleteData(
                 table: "ModuleTypes",
                 keyColumn: "Id",

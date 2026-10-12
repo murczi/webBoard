@@ -309,3 +309,29 @@ explain the build/runtime stages, dependency caching, ports, and non-root user.
 Set the corresponding Compose `image` to the `:local` tag and follow the same
 installation procedure, skipping image pulls for locally built images. Development
 settings, `.env` files, and private TLS material are excluded from build contexts.
+
+## Run verification
+
+Run `dotnet build Webboard.slnx -c Release`, then `dotnet test Webboard.slnx -c Release`.
+Set `WEBBOARD_TEST_DATABASE` to an isolated PostgreSQL server to include database
+integration tests; these create and remove their own databases. Run browser logic
+checks with `node --test tests/js/*.test.cjs` and installer checks with
+`python3 -m unittest discover -s deploy/tests -v`. Installer tests mock privileged
+operations; output reports host-dependent skipped cases. CI runs these checks.
+
+For browser flows, publish the UI to a temporary directory, run
+`npm ci --prefix tests/browser` and `npx --prefix tests/browser playwright install chromium`.
+Set `WEBBOARD_BROWSER_APP` to the published Webboard.Web.dll and
+`WEBBOARD_BROWSER_DATABASE` to a **fresh disposable** database whose name begins
+`webboard_browser`, then run `npm test --prefix tests/browser`. The test server migrates
+that database and runs a local HTTPS proxy on loopback; the suite creates accounts
+and modules and changes their permissions. CI supplies an isolated database.
+# Configuration precedence
+
+Both application startup and design-time EF commands preserve environment variables already supplied by the shell or container. A discovered `.env` file supplies only missing values. Run migration commands with an explicit `ConnectionStrings__WebboardDatabase` when targeting a particular database.
+
+Deployments beneath a URL prefix can set `Application__PathBase=/board`. The proxy must preserve that prefix when forwarding requests. Links, authentication redirects, forms, dashboard refresh, history requests, and static assets use that base. Run the browser suite with `WEBBOARD_BROWSER_PATH_BASE=/board` against a fresh disposable database to verify this deployment mode.
+
+The UI and agent share `Webboard.Contracts` for operation outcomes, health, Docker/systemd discovery, and unit-name validation. Agent protocol version 1 retains the original JSON fields; the optional `X-Webboard-Agent-Protocol` header negotiates compatibility. Missing headers remain supported for older releases; unsupported explicit versions fail before execution. Upgrade both components for new protocol versions. Domain operation commands and discovery view models remain separate from wire payloads.
+
+The [baseline codebase audit](CODEBASE_AUDIT.md) and [implementation record](AUDIT_IMPLEMENTATION.md) document the 35 separately committed planned tasks, the additional container runtime fix, architecture changes, and verification scope.

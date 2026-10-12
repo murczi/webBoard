@@ -1,5 +1,6 @@
 namespace Webboard.Domain.Test.Services;
 
+using Contracts;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Modules;
 using Domain.Services;
@@ -11,6 +12,18 @@ public class ModuleManagementServiceTests {
         var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 5, ValidTypeName = "Steam" });
         await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(new ModuleModel { Name = "Steam", TypeId = 5, SteamServerAddress = "game.example.test", SteamQueryPort = port }, 1, "Created"));
     }
+    [Fact]
+    public void UnregisteredTypesAreRejectedAndKnownTypesUseConsistentCaseSemantics() {
+        var registry = new ModuleConfigurationRegistry();
+        Assert.Throws<ArgumentException>(() => registry.Create("Custom", new ModuleModel { Name = "Custom" }));
+        var configuration = registry.Create("dOcKeR", new ModuleModel { Name = "Sample", HostId = 1, ContainerId = "sample" });
+        Assert.Equal(ModuleTypes.Docker, configuration.TypeName);
+        Assert.True(ModuleEligibility.CanOperate(new ModuleModel { Name = "Sample", TypeName = "dOcKeR", HostId = 1,
+            HostExists = true, HostIsEnabled = true, HostAgentBaseUrl = "https://agent.test", ContainerId = "sample", IsEnabled = true }));
+        Assert.True(ModuleTypes.Find("SYSTEMD")!.SupportsOperations);
+        Assert.Null(ModuleTypes.Find("Custom"));
+    }
+
     [Fact]
     public async Task SteamClearsOtherTypeConfigurationAndDoesNotRequireAHost() {
         var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 5, ValidTypeName = "Steam" });
@@ -250,6 +263,52 @@ public class ModuleManagementServiceTests {
 
         Assert.Contains("100", exception.Message);
     }
+
+    [Theory]
+    [InlineData("example.service", true)] [InlineData("_example.service", true)]
+    [InlineData("example@disk\\x2dname.service", true)] [InlineData("-bad.service", false)]
+    [InlineData("example.SERVICE", false)] [InlineData("bad/name.service", false)]
+    public void SystemdNamesFollowTheAgentAndInstallerContract(string name, bool valid) => Assert.Equal(valid, SystemdUnitName.IsValid(name));
+
+    [Fact]
+    public async Task CreationUsesTheInjectedUtcClock() {
+        var now = new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
+        var service = new ModuleManagementService(new FakeModuleRepository(), new ModuleConfigurationRegistry(), new FixedTime(now));
+        var module = await service.AddAsync(NewModule(), 1, "Create");
+        Assert.Equal(now, module.DateCreated); Assert.Equal(now, module.DateUpdated);
+    }
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+
+    [Fact]
+    public void ValidatedConfigurationOwnsItsInvariantsAndClearsInactiveFields() {
+        Assert.Throws<ArgumentException>(() => MinecraftConfiguration.Create("mc.test", null));
+        Assert.Throws<ArgumentException>(() => DockerConfiguration.Create(null, "container"));
+        var module = NewModule(); module.ServiceName = "old.service"; module.ContainerId = "old";
+        module.ApplyConfiguration(SteamConfiguration.Create("steam.test", 27015, true));
+        Assert.IsType<SteamConfiguration>(module.Configuration);
+        Assert.Null(module.ServiceName); Assert.Null(module.ContainerId); Assert.Null(module.HealthCheckUrl);
+        Assert.Equal(27015, module.SteamQueryPort);
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task UrlLengthLimitAppliesAfterPercentEncoding(bool management) {
+        var service = new ModuleManagementService(new FakeModuleRepository());
+        var module = NewModule();
+        var url = "https://example.test/" + new string('é', 1000);
+        if (management) module.ManagementUrl = url; else module.HealthCheckUrl = url;
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(module, 1, "Create"));
+    }
+
+    [Fact]
+    public async Task MinecraftRequiresAnExplicitPortEvenWithoutBrowserValidation() {
+        var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 4, ValidTypeName = "Minecraft" });
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(new() { Name = "Minecraft", TypeId = 4,
+            MinecraftServerAddress = "mc.example.test" }, 1, "Create"));
+    }
+    [Theory]
+    [InlineData("invalid:address")] [InlineData("name@host")] [InlineData("https://server.test")]
+    public void GameServerAddressesRejectNonHostValues(string value) => Assert.False(ServerAddress.IsValid(value));
 
     private static ModuleModel NewModule() => new()
     {

@@ -4,18 +4,10 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.UserCrudAccess;
 
-public class UserCrudAccessService(IUserCrudAccessRepository repository)
+public sealed class UserCrudAccessService(IUserCrudAccessRepository repository)
     : IUserCrudAccessService {
-    private static readonly IReadOnlyDictionary<string, bool> Resources =
-        new Dictionary<string, bool>(StringComparer.Ordinal)
-        {
-            ["Users"] = false,
-            ["Hosts"] = false,
-            ["Modules"] = false,
-            ["ModuleTypes"] = true,
-            ["AuditLogs"] = true,
-            ["MonitoringHistory"] = true
-        };
+    private static readonly IReadOnlyDictionary<string, bool> Resources = PermissionResources.All
+        .ToDictionary(x => x.Key, x => x.IsReadOnly, StringComparer.Ordinal);
 
     public Task<IReadOnlyList<UserSummaryModel>> GetUsersAsync(
         CancellationToken cancellationToken = default) =>
@@ -45,15 +37,16 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         var persisted = (await repository.GetByUserIdAsync(userId, cancellationToken))
             .ToDictionary(access => access.Resource, StringComparer.Ordinal);
 
+        var version = await repository.GetPermissionVersionAsync(userId, cancellationToken) ?? throw new KeyNotFoundException();
         return Resources.Select(resource => {
             if (persisted.TryGetValue(resource.Key, out var access)) {
-                access.IsReadOnlyResource = resource.Value;
+                access.IsReadOnlyResource = resource.Value; access.PermissionVersion = version;
                 return access;
             }
 
-            return new UserCrudAccessModel
-            {
+            return new UserCrudAccessModel {
                 UserId = userId,
+                PermissionVersion = version,
                 Resource = resource.Key,
                 IsReadOnlyResource = resource.Value
             };
@@ -65,6 +58,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         IReadOnlyCollection<UserCrudAccessModel> access,
         int actorId,
         string auditComment,
+        long expectedVersion,
         CancellationToken cancellationToken = default) {
         await RequireUserPermissionAsync(actorId, delete: false, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
@@ -75,39 +69,12 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
         if (submitted.Keys.Any(resource => !Resources.ContainsKey(resource)))
             throw new ArgumentException("An unknown CRUD resource was submitted.", nameof(access));
 
-        var existing = (await repository.GetByUserIdAsync(userId, cancellationToken))
-            .ToDictionary(item => item.Resource, StringComparer.Ordinal);
-
+        var normalized = new List<UserCrudAccessModel>();
         foreach (var resource in Resources) {
-            if (!submitted.TryGetValue(resource.Key, out var item)) {
-                if (existing.TryGetValue(resource.Key, out var removed))
-                    repository.Delete(removed);
-                continue;
-            }
-
-            item.UserId = userId;
-            item.IsReadOnlyResource = resource.Value;
-            if (resource.Value) {
-                item.CanCreate = false;
-                item.CanUpdate = false;
-                item.CanDelete = false;
-            }
-
-            if (resource.Key != "Modules") item.CanOperate = false;
-            item.CanRead |= item.CanOperate;
-            item.CanRead |= item.CanCreate || item.CanUpdate || item.CanDelete;
-
-            if (existing.TryGetValue(resource.Key, out var current)) {
-                item.Id = current.Id;
-                repository.Update(item);
-            }
-            else {
-                await repository.AddAsync(item, cancellationToken);
-            }
+            if (!submitted.TryGetValue(resource.Key, out var item)) continue;
+            item.UserId = userId; PermissionResources.Normalize(item); normalized.Add(item);
         }
-
-        repository.AddAuditLog(actorId, userId, auditComment);
-        await repository.SaveChangesAsync(cancellationToken);
+        await repository.ReplaceAccessAsync(userId, normalized, actorId, auditComment, expectedVersion, cancellationToken);
     }
 
     private async Task RequireUserPermissionAsync(

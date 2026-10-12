@@ -16,31 +16,8 @@ public class ModuleTypeConfiguration : IEntityTypeConfiguration<ModuleTypeEntity
         builder.Property(propertyExpression: type => type.Name)
                .HasMaxLength(maxLength: 64);
 
-        builder.HasData(
-            new ModuleTypeEntity { Id = 5, Name = "Steam", Description = "Steam A2S game server" },
-            new ModuleTypeEntity
-            {
-                Id = 1,
-                Name = "Http",
-                Description = "Http Module"
-            },
-            new ModuleTypeEntity
-            {
-                Id = 2,
-                Name = "Docker",
-                Description = "Docker container"
-            },
-            new ModuleTypeEntity
-            {
-                Id = 3,
-                Name = "Systemd",
-                Description = "systemd service"
-            },
-            new ModuleTypeEntity
-            {
-                Id = 4,
-                Name = "Minecraft",
-                Description = "Minecraft Java Edition server"
-            });
+        builder.HasData(Webboard.Domain.Model.Modules.ModuleTypes.All.Select(type => new ModuleTypeEntity {
+            Id = type.Id, Name = type.Name, Description = type.Description
+        }));
     }
 }

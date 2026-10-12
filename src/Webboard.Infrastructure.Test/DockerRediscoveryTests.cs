@@ -2,7 +2,7 @@ namespace Webboard.Infrastructure.Test;
 
 using System.Net.Sockets;
 using System.Text;
-using WebBoard.Agent;
+using Agent;
 
 public sealed class DockerRediscoveryTests {
     [Fact]
@@ -35,7 +35,8 @@ public sealed class DockerRediscoveryTests {
                 }
             });
             var config = AgentSecurityTests.Config(new() {
-                ["Docker:SocketPath"] = path, ["Controls:Docker:0"] = "amp-server"
+                ["Docker:SocketPath"] = path,
+                ["Controls:Docker:0"] = "amp-server"
             });
             using var docker = new DockerSocketClient(config);
             Assert.True((await docker.GetContainerStatusAsync("amp-server", deadline.Token))!.IsHealthy);
@@ -47,13 +48,14 @@ public sealed class DockerRediscoveryTests {
             Assert.True((await new AgentOperations(config, docker, new UnusedRunner()).ExecuteAsync(
                 new(Guid.NewGuid(), 1, "Docker", "amp-server", "restart"), deadline.Token)).Success);
             await serve;
-        }
-        finally { Directory.Delete(directory, true); }
+        } finally { Directory.Delete(directory, true); }
     }
 
     private static string Inspect(string id, bool running) =>
         System.Text.Json.JsonSerializer.Serialize(new {
-            Id = id, Name = "/amp-server", State = new { Status = running ? "running" : "exited", Running = running }
+            Id = id,
+            Name = "/amp-server",
+            State = new { Status = running ? "running" : "exited", Running = running }
         });
 
     private sealed class UnusedRunner : IProcessRunner {

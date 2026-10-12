@@ -1,8 +1,6 @@
-namespace WebBoard.Agent;
+namespace Webboard.Agent;
 
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Text.RegularExpressions;
+using Webboard.Contracts;
 
 public sealed partial class SystemdClient {
     private readonly IProcessRunner process;
@@ -22,20 +20,22 @@ public sealed partial class SystemdClient {
             var reload = await CallManagerAsync("Reload", [], cancellationToken);
             if (!reload.Success) return reload with {
                 Output = null,
+                Outcome = OperationOutcome.PartiallyCompleted,
+                FailureReason = OperationFailureReason.PartialCompletion,
                 Message = "Unit-file change completed, but reloading the host systemd manager failed. Verify the service and host reload permission before retrying."
             };
             return result with { Output = null };
         }
         var control = await process.RunAsync("/usr/bin/systemctl",
-            ["--no-ask-password", operation, "--", serviceName], TimeSpan.FromSeconds(30), cancellationToken);
+        ["--no-ask-password", operation, "--", serviceName], TimeSpan.FromSeconds(30), cancellationToken);
         return control with { Output = null };
     }
 
     private Task<OperationResult> CallManagerAsync(string method, string[] arguments, CancellationToken token) =>
         process.RunAsync("/usr/bin/busctl",
-            new[] { "--system", "--allow-interactive-authorization=no", "--timeout=30s", "call",
+        new[] { "--system", "--allow-interactive-authorization=no", "--timeout=30s", "call",
                 "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", method }
-                .Concat(arguments).ToArray(), TimeSpan.FromSeconds(30), token);
+            .Concat(arguments).ToArray(), TimeSpan.FromSeconds(30), token);
 
     public async Task<IReadOnlyList<SystemdServiceDto>> GetServicesAsync(
         CancellationToken cancellationToken) {
@@ -45,17 +45,17 @@ public sealed partial class SystemdClient {
         ], cancellationToken);
 
         return ParsePropertyBlocks(output)
-            .Where(properties =>
-                properties.TryGetValue("Id", out var id) && IsValidServiceName(id) &&
-                properties.GetValueOrDefault("LoadState") != "not-found")
-            .Select(properties => new SystemdServiceDto(
-                properties["Id"],
-                properties.GetValueOrDefault("Description") ?? properties["Id"],
-                properties.GetValueOrDefault("LoadState") ?? "unknown",
-                properties.GetValueOrDefault("ActiveState") ?? "unknown",
-                properties.GetValueOrDefault("SubState") ?? "unknown"))
-            .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+               .Where(properties =>
+                   properties.TryGetValue("Id", out var id) && IsValidServiceName(id) &&
+                   properties.GetValueOrDefault("LoadState") != "not-found")
+               .Select(properties => new SystemdServiceDto(
+               properties["Id"],
+               properties.GetValueOrDefault("Description") ?? properties["Id"],
+               properties.GetValueOrDefault("LoadState") ?? "unknown",
+               properties.GetValueOrDefault("ActiveState") ?? "unknown",
+               properties.GetValueOrDefault("SubState") ?? "unknown"))
+               .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
+               .ToList();
     }
 
     public async Task<SystemdServiceStatusDto?> GetServiceStatusAsync(
@@ -65,8 +65,8 @@ public sealed partial class SystemdClient {
             return null;
 
         var output = await RunSystemctlAsync([
-            "show", serviceName, "--no-pager",
-            "--property=Id,Description,LoadState,ActiveState,SubState"
+            "show", "--no-pager",
+            "--property=Id,Description,LoadState,ActiveState,SubState", "--", serviceName
         ], cancellationToken, allowNonZeroExitCode: true);
         var properties = ParsePropertyBlocks(output).FirstOrDefault();
         if (properties is null ||
@@ -76,86 +76,32 @@ public sealed partial class SystemdClient {
         var activeState = properties.GetValueOrDefault("ActiveState") ?? "unknown";
         var subState = properties.GetValueOrDefault("SubState") ?? "unknown";
         return new SystemdServiceStatusDto(
-            properties.GetValueOrDefault("Id") ?? serviceName,
-            properties.GetValueOrDefault("Description") ?? serviceName,
-            activeState,
-            subState,
-            string.Equals(activeState, "active", StringComparison.OrdinalIgnoreCase),
-            $"{activeState} ({subState})");
+        properties.GetValueOrDefault("Id") ?? serviceName,
+        properties.GetValueOrDefault("Description") ?? serviceName,
+        activeState,
+        subState,
+        string.Equals(activeState, "active", StringComparison.OrdinalIgnoreCase),
+        $"{activeState} ({subState})");
     }
 
-    private static async Task<string> RunSystemctlAsync(
-        IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken,
-        bool allowNonZeroExitCode = false) {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        cancellationToken = timeout.Token;
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "systemctl",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-
-        using var process = new Process { StartInfo = startInfo };
-        try {
-            process.Start();
-        }
-        catch (Win32Exception exception) {
-            throw new InvalidOperationException("systemctl is not installed on this host.", exception);
-        }
-
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        try {
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-            throw;
-        }
-
-        var output = await standardOutput;
-        var error = await standardError;
-        if (process.ExitCode != 0 && !allowNonZeroExitCode)
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(error) ? "systemctl failed." : error.Trim());
-        return output;
+    private async Task<string> RunSystemctlAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool allowNonZeroExitCode = false) {
+        var result = await process.CaptureAsync("/usr/bin/systemctl", arguments, TimeSpan.FromSeconds(5), 1048576, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (result.TimedOut) throw new OperationCanceledException("The systemd request timed out.");
+        if (!result.Started || result.Truncated) throw new InvalidOperationException(result.Truncated ? "systemd response exceeded the allowed size." : result.StandardError);
+        if (result.ExitCode != 0 && !allowNonZeroExitCode) throw new InvalidOperationException(string.IsNullOrWhiteSpace(result.StandardError) ? "systemctl failed." : result.StandardError.Trim());
+        return result.StandardOutput;
     }
 
     private static IReadOnlyList<Dictionary<string, string>> ParsePropertyBlocks(string output) =>
         output.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
-            .Select(block => block.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(line => line.Split('=', 2))
-                .Where(parts => parts.Length == 2)
-                .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal))
-            .ToList();
+              .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+              .Select(block => block.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(line => line.Split('=', 2))
+                                    .Where(parts => parts.Length == 2)
+                                    .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal))
+              .ToList();
 
-    private static bool IsValidServiceName(string serviceName) =>
-        serviceName.Length <= 256 && ServiceNamePattern().IsMatch(serviceName);
+    private static bool IsValidServiceName(string serviceName) => SystemdUnitName.IsValid(serviceName);
 
-    [GeneratedRegex(@"^[A-Za-z0-9_.@:\\-]+\.service$", RegexOptions.CultureInvariant)]
-    private static partial Regex ServiceNamePattern();
 }
-
-public sealed record SystemdServiceDto(
-    string Name,
-    string Description,
-    string LoadState,
-    string ActiveState,
-    string SubState);
-
-public sealed record SystemdServiceStatusDto(
-    string Name,
-    string Description,
-    string ActiveState,
-    string SubState,
-    bool IsHealthy,
-    string Message);

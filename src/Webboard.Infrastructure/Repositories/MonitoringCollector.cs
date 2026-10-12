@@ -9,10 +9,12 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthChecker checker, MonitoringOptions options) : IMonitoringCollector {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public MonitoringCollector(WebboardDbContext db, IModuleHealthChecker checker, MonitoringOptions options, TimeProvider timeProvider) : this(db, checker, options) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<int>> EnabledModuleIdsAsync(CancellationToken token) =>
-        await db.Modules.AsNoTracking().Where(x => x.IsEnabled && !x.DeletionFlag &&
-            (x.HostId == null || x.Host != null && x.Host.IsEnabled && !x.Host.DeletionFlag) &&
-            !db.LatestMonitoring.Any(latest => latest.ModuleId == x.Id && latest.ConfigurationRevision == x.DateUpdated && latest.Timestamp > DateTimeOffset.UtcNow.AddSeconds(-options.IntervalSeconds))).Select(x => x.Id).ToListAsync(token);
+        await db.Modules.AsNoTracking().Where(ModuleQueries.Monitorable).Where(x =>
+            !db.LatestMonitoring.Any(latest => latest.ModuleId == x.Id && latest.ConfigurationVersion == x.MonitoringVersion && latest.Timestamp > timeProvider.GetUtcNow().AddSeconds(-options.IntervalSeconds))).Select(x => x.Id).ToListAsync(token);
     public async Task CollectAsync(int moduleId, CancellationToken token) {
         await using var transaction = await db.Database.BeginTransactionAsync(token);
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
@@ -21,17 +23,11 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         if (!(bool)(await acquire.ExecuteScalarAsync(token))!) return;
         var module = await db.Modules.AsNoTracking().Include(x => x.Type).Include(x => x.Host)
             .SingleOrDefaultAsync(x => x.Id == moduleId, token);
-        if (module is null || !module.IsEnabled || module.DeletionFlag || module.HostId.HasValue && (module.Host is null || !module.Host.IsEnabled || module.Host.DeletionFlag)) return;
+        if (module is null || !ModuleQueries.IsMonitorable(module)) return;
         var latest = await db.LatestMonitoring.SingleOrDefaultAsync(x => x.ModuleId == moduleId, token);
-        var now = DateTimeOffset.UtcNow;
-        if (latest is not null && latest.ConfigurationRevision == module.DateUpdated && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
-        var model = new ModuleModel {
-            Id = module.Id, Name = module.FriendlyName, TypeId = module.TypeId, TypeName = module.Type?.Name ?? "",
-            HostId = module.HostId, HostName = module.Host?.Name, HostAgentBaseUrl = module.Host?.AgentBaseUrl,
-            HealthCheckUrl = module.HealthCheckUrl, ContainerId = module.ContainerId, ServiceName = module.ServiceName,
-            MinecraftServerAddress = module.MinecraftServerAddress, MinecraftServerPort = module.MinecraftServerPort,
-            SteamServerAddress = module.SteamServerAddress, SteamQueryPort = module.SteamQueryPort, SteamQueryPlayers = module.SteamQueryPlayers, IsEnabled = true
-        };
+        var now = timeProvider.GetUtcNow();
+        if (latest is not null && latest.ConfigurationVersion == module.MonitoringVersion && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
+        var model = ModuleProjection.ToModel(module);
         ModuleHealthResult result;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
@@ -40,19 +36,21 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { result = new(ModuleHealthState.Unhealthy, null, "Monitoring check timed out"); }
         catch (Exception) when (!token.IsCancellationRequested) { result = new(ModuleHealthState.Unhealthy, null, "Monitoring check failed"); }
         token.ThrowIfCancellationRequested();
-        now = DateTimeOffset.UtcNow;
+        now = timeProvider.GetUtcNow();
         var message = result.Message[..Math.Min(result.Message.Length, 1000)];
         db.MonitoringResults.Add(new() { ModuleId = moduleId, Timestamp = now, FreshUntil = now.AddSeconds(options.StaleSeconds),
             ConfigurationRevision = module.DateUpdated, State = result.State, PingMilliseconds = result.PingMilliseconds, Message = message });
         if (latest is null) { latest = new() { ModuleId = moduleId }; db.LatestMonitoring.Add(latest); }
         latest.Timestamp = now; latest.FreshUntil = now.AddSeconds(options.StaleSeconds); latest.ConfigurationRevision = module.DateUpdated;
+        latest.ConfigurationVersion = module.MonitoringVersion;
         latest.State = result.State; latest.PingMilliseconds = result.PingMilliseconds; latest.Message = message;
         latest.Details = result.Steam is null ? null : JsonSerializer.Serialize(result.Steam);
+        await MonitoringBlockProjection.ObserveAsync(db, moduleId, now, latest.FreshUntil, result.State, message, token);
         await db.SaveChangesAsync(token);
         await transaction.CommitAsync(token);
     }
     public async Task RetainAsync(CancellationToken token) {
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-options.RetentionDays);
+        var cutoff = timeProvider.GetUtcNow().AddDays(-options.RetentionDays);
         int removed;
         do {
             await using var transaction = await db.Database.BeginTransactionAsync(token);
@@ -65,5 +63,6 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
                 """, token);
             await transaction.CommitAsync(token);
         } while (removed == 10000 && !token.IsCancellationRequested);
+        await db.MonitoringBlocks.Where(x => x.End < cutoff).ExecuteDeleteAsync(token);
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 public class UserConfiguration : IEntityTypeConfiguration<UserEntity> {
     public void Configure(EntityTypeBuilder<UserEntity> builder) {
+        builder.Property(user => user.PermissionVersion).HasDefaultValue(0L).IsConcurrencyToken();
         builder.ToTable("Users");
 
         builder.HasKey(keyExpression: user => user.Id);

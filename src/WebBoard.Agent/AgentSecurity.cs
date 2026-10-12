@@ -1,13 +1,14 @@
-namespace WebBoard.Agent;
+namespace Webboard.Agent;
 
 using System.Security.Cryptography;
 using System.Text;
+using Webboard.Contracts;
 
 public sealed class AgentSecurity {
     private readonly byte[][] hashes;
     public AgentSecurity(IConfiguration configuration) {
         var keys = configuration.GetSection("Security:Tokens").Get<string[]>() ?? [];
-        if (keys.Length == 0 || keys.Any(key => Encoding.UTF8.GetByteCount(key) < 32))
+        if (keys.Length == 0 || keys.Any(key => !AgentToken.IsValid(key)))
             throw new InvalidOperationException("Security:Tokens must contain random credentials of at least 32 bytes.");
         hashes = keys.Select(key => SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToArray();
     }

@@ -4,7 +4,11 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.Modules;
 
-public class ModuleManagementService(IModuleRepository repository) : IModuleManagementService {
+public sealed class ModuleManagementService(IModuleRepository repository) : IModuleManagementService {
+    private readonly ModuleConfigurationRegistry configurations = new();
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public ModuleManagementService(IModuleRepository repository, ModuleConfigurationRegistry configurations, TimeProvider timeProvider) : this(repository, configurations) => this.timeProvider = timeProvider;
+    public ModuleManagementService(IModuleRepository repository, ModuleConfigurationRegistry configurations) : this(repository) => this.configurations = configurations;
     public Task<IReadOnlyList<ModuleModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         repository.GetAllAsync(cancellationToken);
 
@@ -21,7 +25,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         module.DateCreated = now;
         module.DateUpdated = now;
         await repository.AddAsync(module, actorId, auditComment, cancellationToken);
@@ -35,7 +39,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
-        module.DateUpdated = DateTimeOffset.UtcNow;
+        module.DateUpdated = timeProvider.GetUtcNow();
         return await repository.UpdateAsync(module, actorId, auditComment, cancellationToken);
     }
 
@@ -64,97 +68,12 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         var typeName = await repository.GetTypeNameAsync(module.TypeId, cancellationToken);
         if (typeName is null)
             throw new ArgumentException("Select a valid module type.", nameof(module));
-        if (module.HostId.HasValue &&
-            !string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(typeName, "Minecraft", StringComparison.OrdinalIgnoreCase) &&
-            !await repository.HostExistsAsync(module.HostId.Value, cancellationToken))
+        var configuration = configurations.Create(typeName, module);
+        if (configuration.HostId is int hostId && !await repository.HostExistsAsync(hostId, cancellationToken))
             throw new ArgumentException("Select a valid host or leave the host empty.", nameof(module));
-
-        if (!string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase)) {
-            module.SteamServerAddress = null; module.SteamQueryPort = null; module.SteamQueryPlayers = false;
-        }
-        if (string.Equals(typeName, "Steam", StringComparison.OrdinalIgnoreCase)) {
-            module.HostId = null; module.HealthCheckUrl = null; module.ContainerId = null;
-            module.ServiceName = null; module.MinecraftServerAddress = null; module.MinecraftServerPort = null;
-            module.SteamServerAddress = EmptyToNull(module.SteamServerAddress);
-            if (module.SteamServerAddress is null || !IsValidMinecraftAddress(module.SteamServerAddress) ||
-                Uri.CheckHostName(module.SteamServerAddress) == UriHostNameType.Unknown)
-                throw new ArgumentException("Enter a valid Steam server address.");
-            if (module.SteamQueryPort is null or < 1 or > 65535) throw new ArgumentException("Enter a query port between 1 and 65535.");
-        }
-        else if (string.Equals(typeName, "Docker", StringComparison.OrdinalIgnoreCase)) {
-            module.HealthCheckUrl = null;
-            module.ServiceName = null;
-            module.MinecraftServerAddress = null;
-            module.MinecraftServerPort = null;
-            module.ContainerId = EmptyToNull(module.ContainerId);
-            if (!module.HostId.HasValue)
-                throw new ArgumentException("Select a host for a Docker module.", nameof(module));
-            if (module.ContainerId is null)
-                throw new ArgumentException("Select a Docker container.", nameof(module));
-            if (module.ContainerId.Length > 128)
-                throw new ArgumentException("Docker container name or ID cannot exceed 128 characters.", nameof(module));
-        }
-        else if (string.Equals(typeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
-            module.HealthCheckUrl = null;
-            module.ContainerId = null;
-            module.MinecraftServerAddress = null;
-            module.MinecraftServerPort = null;
-            module.ServiceName = EmptyToNull(module.ServiceName);
-            if (!module.HostId.HasValue)
-                throw new ArgumentException("Select a host for a systemd module.", nameof(module));
-            if (module.ServiceName is null)
-                throw new ArgumentException("Select a systemd service.", nameof(module));
-            if (!IsValidSystemdServiceName(module.ServiceName))
-                throw new ArgumentException("Select a valid systemd service.", nameof(module));
-        }
-        else if (string.Equals(typeName, "Minecraft", StringComparison.OrdinalIgnoreCase)) {
-            module.HealthCheckUrl = null;
-            module.ContainerId = null;
-            module.ServiceName = null;
-            module.HostId = null;
-            module.MinecraftServerAddress = EmptyToNull(module.MinecraftServerAddress);
-            if (module.MinecraftServerAddress is null)
-                throw new ArgumentException("Enter a Minecraft server address.", nameof(module));
-            if (!IsValidMinecraftAddress(module.MinecraftServerAddress))
-                throw new ArgumentException("Enter a valid Minecraft server address.", nameof(module));
-            if (module.MinecraftServerPort is < 1 or > 65535)
-                throw new ArgumentException("Minecraft server port must be between 1 and 65535.", nameof(module));
-        }
-        else {
-            module.HealthCheckUrl = NormalizeOptionalUrl(module.HealthCheckUrl, "Health-check URL");
-            module.ContainerId = null;
-            module.ServiceName = null;
-            module.MinecraftServerAddress = null;
-            module.MinecraftServerPort = null;
-        }
+        module.ApplyConfiguration(configuration);
     }
 
-    private static string? EmptyToNull(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static bool IsValidSystemdServiceName(string value) =>
-        value.Length <= 256 &&
-        value.EndsWith(".service", StringComparison.OrdinalIgnoreCase) &&
-        value.All(character => char.IsAsciiLetterOrDigit(character) ||
-            character is '_' or '.' or '@' or ':' or '\\' or '-');
-
-    private static bool IsValidMinecraftAddress(string value) =>
-        value.Length <= 253 &&
-        !value.Any(char.IsWhiteSpace) &&
-        !value.Contains('/') &&
-        !value.Contains('\\');
-
-    private static string? NormalizeOptionalUrl(string? value, string label) {
-        var candidate = EmptyToNull(value);
-        if (candidate is null)
-            return null;
-        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            !string.IsNullOrEmpty(uri.UserInfo))
-            throw new ArgumentException($"{label} must be an absolute HTTP or HTTPS URL without credentials.");
-        if (candidate.Length > 2048)
-            throw new ArgumentException($"{label} cannot exceed 2048 characters.");
-        return uri.AbsoluteUri;
-    }
+    private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeOptionalUrl(string? value, string label) => WebUrl.NormalizeOptional(value, label);
 }

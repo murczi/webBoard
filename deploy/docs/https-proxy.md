@@ -141,3 +141,13 @@ sudo systemctl reload caddy
 Keep Caddy's persistent service storage for certificate renewal and local CA
 continuity. Restoring a backup Caddyfile also requires validation and reload.
 Use HTTPS for registration/login; the UI's authentication cookies are Secure.
+
+## Trust the proxy in the application
+
+Configure `ReverseProxy__KnownProxies__0` with the proxy address as seen by the UI
+container, or `ReverseProxy__KnownNetworks__0` with its dedicated Docker subnet.
+The guided installer configures its deployment network automatically. For a host
+proxy, inspect the Docker network gateway; the container does not see the host
+connection as loopback. Keep the upstream private and trust only proxy addresses.
+The app processes the original scheme before HTTPS and authentication middleware.
+Production login cookies always require HTTPS.

@@ -46,7 +46,7 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("ExitCode")
@@ -55,6 +55,10 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<string>("Failure")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<int?>("HostId")
                         .HasColumnType("integer");
@@ -80,6 +84,9 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<string>("TargetSnapshot")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("TimedOut")
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("UserId")
                         .HasColumnType("integer");
@@ -119,7 +126,10 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("DeletionFlag")
@@ -133,9 +143,22 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComputedColumnSql("lower(\"Name\")", true);
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("NormalizedName")
                         .IsUnique();
 
                     b.ToTable("Hosts", (string)null);
@@ -148,6 +171,9 @@ namespace Webboard.Infrastructure.Configuration.Migrations
 
                     b.Property<DateTimeOffset>("ConfigurationRevision")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ConfigurationVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Details")
                         .HasColumnType("jsonb");
@@ -229,6 +255,11 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<int?>("MinecraftServerPort")
                         .HasColumnType("integer");
 
+                    b.Property<long>("MonitoringVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.Property<string>("ServiceName")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -245,6 +276,12 @@ namespace Webboard.Infrastructure.Configuration.Migrations
 
                     b.Property<int>("TypeId")
                         .HasColumnType("integer");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("Id");
 
@@ -311,6 +348,40 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                             Description = "Minecraft Java Edition server",
                             Name = "Minecraft"
                         });
+                });
+
+            modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringBlockEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("End")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("ModuleId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("Start")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("End");
+
+                    b.HasIndex("ModuleId", "Start");
+
+                    b.ToTable("MonitoringBlocks", (string)null);
                 });
 
             modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringResultEntity", b =>
@@ -407,10 +478,10 @@ namespace Webboard.Infrastructure.Configuration.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DateUpdated")
+                    b.Property<DateTimeOffset>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("DeletionFlag")
@@ -425,6 +496,12 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<long>("PermissionVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("Id");
 
@@ -491,6 +568,15 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Navigation("Host");
 
                     b.Navigation("Type");
+                });
+
+            modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringBlockEntity", b =>
+                {
+                    b.HasOne("Webboard.Infrastructure.Configuration.Entities.ModuleEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ModuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringResultEntity", b =>

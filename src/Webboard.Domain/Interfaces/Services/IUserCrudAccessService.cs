@@ -21,5 +21,6 @@ public interface IUserCrudAccessService {
         IReadOnlyCollection<UserCrudAccessModel> access,
         int actorId,
         string auditComment,
+        long expectedVersion,
         CancellationToken cancellationToken = default);
 }

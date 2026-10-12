@@ -3,8 +3,6 @@
 .history-row[hidden] { display:none; }
 .history-name { overflow-wrap:anywhere; }
 .history-track { position:relative;height:28px;background:var(--bs-secondary-bg);display:flex; }
-.history-block { border:0;padding:0;height:100%;min-width:0;flex-shrink:0;cursor:pointer; }
-.history-block:focus-visible { outline:3px solid var(--bs-body-color);outline-offset:3px;z-index:1; }
 .history-axis { display:flex;justify-content:space-between;font-size:.75rem;gap:4px; }
 .history-axis span { max-width:90px; }
 .history-legend { display:flex;flex-wrap:wrap;gap:12px; }

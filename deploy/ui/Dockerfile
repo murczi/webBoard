@@ -7,11 +7,13 @@
 # Build stage: the SDK restores dependencies and compiles the application.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
+COPY Directory.Build.props ./
 
 # Copy project files first so dependency restore can be cached across source edits.
 COPY src/Webboard.Web/Webboard.Web.csproj src/Webboard.Web/
 COPY src/Webboard.Domain/Webboard.Domain.csproj src/Webboard.Domain/
 COPY src/Webboard.Domain.Model/Webboard.Domain.Model.csproj src/Webboard.Domain.Model/
+COPY src/Webboard.Contracts/Webboard.Contracts.csproj src/Webboard.Contracts/
 COPY src/Webboard.Infrastructure/Webboard.Infrastructure.csproj src/Webboard.Infrastructure/
 COPY src/Webboard.Infrastructure.Configuration/Webboard.Infrastructure.Configuration.csproj src/Webboard.Infrastructure.Configuration/
 # Restore NuGet packages for the application and its project references.
@@ -27,6 +29,11 @@ RUN dotnet publish src/Webboard.Web/Webboard.Web.csproj \
 # Runtime stage: ASP.NET runtime plus published output only.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+# Npgsql's PostgreSQL authentication negotiation uses the native GSSAPI library.
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 # Default internal HTTP port; the HTTPS reverse proxy connects here.
 ENV ASPNETCORE_HTTP_PORTS=8080
 # Metadata only: Compose ports publishes a host port.

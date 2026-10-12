@@ -4,8 +4,11 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.Hosts;
 
-public class HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker)
+public sealed class HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker)
     : IHostManagementService {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker, TimeProvider timeProvider) : this(repository, healthChecker) => this.timeProvider = timeProvider;
+
     public Task<IReadOnlyList<HostModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         repository.GetAllAsync(cancellationToken);
 
@@ -22,8 +25,8 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
         if (await repository.NameExistsAsync(host.Name, cancellationToken: cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
-        await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
-        host.DateCreated = DateTime.UtcNow;
+        if (host.IsEnabled) await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
+        host.DateCreated = host.DateUpdated = timeProvider.GetUtcNow();
         await repository.AddAsync(host, actorId, auditComment, cancellationToken);
         return host;
     }
@@ -38,7 +41,11 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
         if (await repository.NameExistsAsync(host.Name, host.Id, cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
-        await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
+        var current = (await repository.GetAllAsync(cancellationToken)).SingleOrDefault(x => x.Id == host.Id);
+        if (current is null) return false;
+        if (host.IsEnabled && (!current.IsEnabled || current.AgentBaseUrl != host.AgentBaseUrl))
+            await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
+        host.DateUpdated = timeProvider.GetUtcNow();
         return await repository.UpdateAsync(host, actorId, auditComment, cancellationToken);
     }
 
@@ -66,20 +73,5 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
             throw new ArgumentException("Host name must be between 1 and 100 characters.", nameof(host));
     }
 
-    private static string NormalizeAgentBaseUrl(string value) {
-        var candidate = value.Trim();
-        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            !string.IsNullOrEmpty(uri.UserInfo) ||
-            !string.IsNullOrEmpty(uri.Query) ||
-            !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException(
-                "Agent base URL must be an absolute HTTP or HTTPS URL without credentials, a query, or a fragment.",
-                nameof(value));
-
-        var normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
-        if (normalized.Length > 2048)
-            throw new ArgumentException("Agent base URL cannot exceed 2048 characters.", nameof(value));
-        return normalized;
-    }
+    private static string NormalizeAgentBaseUrl(string value) => AgentEndpoint.Create(value).Value;
 }

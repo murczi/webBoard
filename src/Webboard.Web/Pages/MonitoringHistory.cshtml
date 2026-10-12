@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="~/css/monitoring-history.css" asp-append-version="true" />
 <h1 class="h2">Monitoring history</h1>
 <p class="text-muted">Availability across your modules. History is retained for @Model.RetentionDays days. Gaps mean no fresh observation was available.</p>
-<div id="monitoring-history" data-account="@Model.Account" data-stale-seconds="@Model.StaleSeconds">
+<div id="monitoring-history" data-endpoint="@Url.Page("/MonitoringHistory")" data-account="@Model.Account" data-stale-seconds="@Model.StaleSeconds">
     <form id="history-range" class="d-flex flex-wrap align-items-end gap-2 mb-3">
         <div><label for="history-preset" class="form-label">Time range</label><select id="history-preset" class="form-select"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="custom">Custom</option></select></div>
         <div><label for="history-from" class="form-label">From</label><input id="history-from" type="datetime-local" class="form-control" required /></div>

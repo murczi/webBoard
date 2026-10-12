@@ -3,18 +3,20 @@ namespace Webboard.Web.Services;
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Webboard.Contracts;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
+using Domain.Model.Hosts;
 
 public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClient {
     public async Task<IReadOnlyList<DockerContainerModel>> GetContainersAsync(
         string agentBaseUrl,
         CancellationToken cancellationToken = default) {
         var endpoint = CreateEndpoint(agentBaseUrl, "docker/containers");
-        using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+        using var response = await httpClient.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<List<DockerContainerModel>>(
-            cancellationToken: cancellationToken) ?? [];
+        var containers = await AgentResponseReader.ReadAsync<List<DockerContainerDto>>(response, cancellationToken);
+        return containers.Select(x => new DockerContainerModel(x.Id, x.Name, x.Image, x.State, x.Status)).ToArray();
     }
 
     public async Task<ModuleHealthResult> CheckContainerAsync(
@@ -34,7 +36,7 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         var stopwatch = Stopwatch.StartNew();
         var receivedResponse = false;
         try {
-            using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+            using var response = await httpClient.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             receivedResponse = true;
             stopwatch.Stop();
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -48,9 +50,8 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
                     stopwatch.ElapsedMilliseconds,
                     AgentHealthFeedback.ResponseFailure(response.StatusCode, "Docker"));
 
-            var status = await response.Content.ReadFromJsonAsync<DockerContainerStatus>(
-                cancellationToken: cancellationToken);
-            if (status is null || status.IsHealthy is null || string.IsNullOrWhiteSpace(status.Message))
+            var status = await AgentResponseReader.ReadAsync<DockerContainerStatusDto>(response, cancellationToken);
+            if (status is null || string.IsNullOrWhiteSpace(status.Message))
                 return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
             return new ModuleHealthResult(
                 status.IsHealthy == true ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
@@ -60,6 +61,9 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Host agent request timed out");
         }
+        catch (AgentResponseException) {
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
+        }
         catch (HttpRequestException) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, receivedResponse ? "Could not read the agent response" : "Cannot reach the host agent");
         }
@@ -68,12 +72,7 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         }
     }
 
-    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) {
-        if (!Uri.TryCreate(agentBaseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) ||
-            (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
-            throw new ArgumentException("Invalid agent URL.", nameof(agentBaseUrl));
-        return new Uri(baseUri, relativePath);
-    }
+    private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) => AgentEndpoint.Create(agentBaseUrl).For(relativePath);
 
-    private sealed record DockerContainerStatus(bool? IsHealthy, string? Message);
+
 }

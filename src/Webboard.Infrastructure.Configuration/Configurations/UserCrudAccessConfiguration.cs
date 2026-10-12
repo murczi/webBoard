@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Configuration.Configurations;
 
 using Entities;
+using Webboard.Domain.Model.UserCrudAccess;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,12 +11,12 @@ public class UserCrudAccessConfiguration
         builder.ToTable("UserCrudAccess", tableBuilder => {
             tableBuilder.HasCheckConstraint(
                 "CK_UserCrudAccess_Resource",
-                "\"Resource\" IN ('Users', 'Hosts', 'Modules', 'ModuleTypes', 'AuditLogs', 'MonitoringHistory')");
+                "\"Resource\" IN (" + string.Join(", ", PermissionResources.All.Select(x => $"'{x.Key}'")) + ")");
 
             tableBuilder.HasCheckConstraint("CK_UserCrudAccess_Operations", "\"Resource\" = 'Modules' OR NOT \"CanOperate\"");
             tableBuilder.HasCheckConstraint(
                 "CK_UserCrudAccess_ReadOnlyResources",
-                "\"Resource\" NOT IN ('ModuleTypes', 'AuditLogs', 'MonitoringHistory') OR " +
+                "\"Resource\" NOT IN (" + string.Join(", ", PermissionResources.All.Where(x => x.IsReadOnly).Select(x => $"'{x.Key}'")) + ") OR " +
                 "(NOT \"CanCreate\" AND NOT \"CanUpdate\" AND NOT \"CanDelete\")");
         });
 

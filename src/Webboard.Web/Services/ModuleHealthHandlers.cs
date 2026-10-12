@@ -4,7 +4,7 @@ using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 
 public sealed class HttpHealthHandler(HttpClient httpClient) : IModuleHealthHandler {
-    public string TypeName => "Http";
+    public string TypeName => ModuleTypes.Http;
     public async Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken) {
         var healthCheckUrl = module.HealthCheckUrl;
         if (string.IsNullOrWhiteSpace(healthCheckUrl))
@@ -42,28 +42,28 @@ public sealed class HttpHealthHandler(HttpClient httpClient) : IModuleHealthHand
     }
 }
 public sealed class DockerHealthHandler(IDockerAgentClient client) : IModuleHealthHandler {
-    public string TypeName => "Docker";
+    public string TypeName => ModuleTypes.Docker;
     public async Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken) =>
         string.IsNullOrWhiteSpace(module.HostAgentBaseUrl) || string.IsNullOrWhiteSpace(module.ContainerId)
         ? new(ModuleHealthState.NotConfigured, null, "Docker host or container is not configured")
         : AgentHealthFeedback.WithHost(await client.CheckContainerAsync(module.HostAgentBaseUrl, module.ContainerId, cancellationToken), module.HostName);
 }
 public sealed class SystemdHealthHandler(ISystemdAgentClient client) : IModuleHealthHandler {
-    public string TypeName => "Systemd";
+    public string TypeName => ModuleTypes.Systemd;
     public async Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken) =>
         string.IsNullOrWhiteSpace(module.HostAgentBaseUrl) || string.IsNullOrWhiteSpace(module.ServiceName)
         ? new(ModuleHealthState.NotConfigured, null, "systemd host or service is not configured")
         : AgentHealthFeedback.WithHost(await client.CheckServiceAsync(module.HostAgentBaseUrl, module.ServiceName, cancellationToken), module.HostName);
 }
 public sealed class MinecraftHealthHandler(IMinecraftStatusClient client) : IModuleHealthHandler {
-    public string TypeName => "Minecraft";
+    public string TypeName => ModuleTypes.Minecraft;
     public Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken) =>
         string.IsNullOrWhiteSpace(module.MinecraftServerAddress) || module.MinecraftServerPort is null
         ? Task.FromResult(new ModuleHealthResult(ModuleHealthState.NotConfigured, null, "Minecraft address or port is not configured"))
         : client.CheckServerAsync(module.MinecraftServerAddress, module.MinecraftServerPort.Value, cancellationToken);
 }
 public sealed class SteamHealthHandler(ISteamQueryClient client) : IModuleHealthHandler {
-    public string TypeName => "Steam";
+    public string TypeName => ModuleTypes.Steam;
     public Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken) =>
         string.IsNullOrWhiteSpace(module.SteamServerAddress) || module.SteamQueryPort is null
         ? Task.FromResult(new ModuleHealthResult(ModuleHealthState.NotConfigured, null, "Steam address or query port is not configured"))

@@ -37,6 +37,7 @@ Webboard.Web.Security.OutboundSecurityValidation.Validate(builder.Configuration)
 var monitoringOptions = builder.Configuration.GetSection("Monitoring").Get<Webboard.Domain.Model.Monitoring.MonitoringOptions>() ?? new();
 monitoringOptions.Validate();
 builder.Services.AddSingleton(monitoringOptions);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IMonitoringCollector, MonitoringCollector>();
 builder.Services.AddScoped<IMonitoringReader, MonitoringReader>();
 builder.Services.AddHostedService<Webboard.Web.Services.MonitoringWorker>();
@@ -52,11 +53,17 @@ builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
 builder.Services.AddScoped<IHostRepository, HostRepository>();
-builder.Services.AddScoped<IHostManagementService, HostManagementService>();
+builder.Services.AddScoped<HostManagementService>();
+builder.Services.AddScoped<IHostManagementService, AuthorizedHostManagementService>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
-builder.Services.AddScoped<IModuleManagementService, ModuleManagementService>();
+builder.Services.AddSingleton<ModuleConfigurationRegistry>();
+builder.Services.AddScoped<ModuleManagementService>();
+builder.Services.AddScoped<IModuleManagementService, AuthorizedModuleManagementService>();
+builder.Services.AddScoped<IResourceAuthorization, ResourceAuthorization>();
+builder.Services.AddScoped<ISessionAccessValidator, SessionAccessValidator>();
 builder.Services.AddScoped<JwtSessionService>();
-builder.Services.AddScoped<IModuleOperations, ModuleOperations>();
+builder.Services.AddScoped<IModuleOperationStore, PostgresModuleOperationStore>();
+builder.Services.AddScoped<IModuleOperations, ModuleOperationService>();
 builder.Services.AddHttpClient<IAgentOperationsClient, Webboard.Web.Services.AgentOperationsClient>(client => client.Timeout = TimeSpan.FromSeconds(310))
     .AddHttpMessageHandler<Webboard.Web.Security.AgentAuthenticationHandler>()
     .ConfigurePrimaryHttpMessageHandler(provider => provider.GetRequiredService<Webboard.Web.Security.NetworkPolicy>().CreateHandler());
@@ -113,6 +120,11 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context => {
+                var validator = context.HttpContext.RequestServices.GetRequiredService<ISessionAccessValidator>();
+                if (!await validator.ValidateAsync(context.Principal!, context.HttpContext.RequestAborted))
+                    context.Fail("Account is no longer active.");
+            },
             OnMessageReceived = context => {
                 context.Token = context.Request.Cookies[JwtOptions.CookieName];
                 return Task.CompletedTask;
@@ -124,7 +136,7 @@ builder.Services
                     var returnUrl = context.Request.PathBase + context.Request.Path +
                                     context.Request.QueryString;
                     context.Response.Redirect(
-                        $"/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}");
+                        $"{context.Request.PathBase}/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}");
                 }
 
                 return Task.CompletedTask;
@@ -138,13 +150,28 @@ builder.Services.AddAuthorization(options => {
         policy.RequireClaim(JwtSessionService.AccessClaimType, UserAccess.Read));
 });
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    Webboard.Web.Security.ReverseProxySecurity.Configure(options, builder.Configuration));
+builder.Services.AddExceptionHandler<Webboard.Web.Services.ResourceExceptionHandler>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
+var pathBase = builder.Configuration["Application:PathBase"];
+if (!string.IsNullOrEmpty(pathBase)) {
+    if (!pathBase.StartsWith('/') || pathBase.EndsWith('/') || pathBase.Contains("//") ||
+        pathBase.Split('/').Any(segment => segment is "." or "..") ||
+        pathBase.Any(character => char.IsWhiteSpace(character) || character is '?' or '#' or '\\'))
+        throw new InvalidOperationException("Application:PathBase must be a path such as /board without a trailing slash.");
+    app.UsePathBase(pathBase);
+}
+
+// Restore the original scheme only from configured trusted proxies.
+app.UseForwardedHeaders();
+
 // Configure the HTTP request pipeline.
+app.UseExceptionHandler("/Error");
 if (!app.Environment.IsDevelopment()){
-    app.UseExceptionHandler("/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }

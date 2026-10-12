@@ -154,6 +154,16 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     table.PrimaryKey("PK_Users", x => x.Id);
                 });
 
+            // Preserve historical actor IDs as explicitly non-login archival identities.
+            migrationBuilder.Sql("""
+                INSERT INTO "Users" ("Id", "Name", "PasswordHash", "DeletionFlag", "DateCreated", "DateUpdated")
+                SELECT DISTINCT COALESCE("ActorId", 0), '__legacy_actor_' || COALESCE("ActorId", 0)::text,
+                    'historical-non-login', true, now(), now() FROM "AuditLogs";
+                UPDATE "AuditLogs" SET "ActorId" = 0 WHERE "ActorId" IS NULL;
+                SELECT setval(pg_get_serial_sequence('"Users"', 'Id'),
+                    GREATEST(COALESCE(MAX("Id"), 0), 1), COALESCE(MAX("Id"), 0) > 0) FROM "Users";
+                """);
+
             migrationBuilder.AlterColumn<int>(
                 name: "ActorId",
                 table: "AuditLogs",

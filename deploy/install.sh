@@ -101,7 +101,7 @@ prepare_agent_account() {
     esac
 }
 valid_systemd_service() {
-    local pattern='^[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,249}\.service$'
+    local pattern='^[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,247}\.service$'
     [[ ${#1} -le 256 && "$1" =~ $pattern ]]
 }
 ensure_polkit() {
@@ -275,7 +275,11 @@ suggest_bind() {
     fi
     printf '127.0.0.1'
 }
-valid_token() { [[ ${#1} -ge 32 && ! "$1" =~ [[:space:]] ]]; }
+valid_token() {
+    local token_bytes token_whitespace=$' \t\n\r\v\f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000'
+    token_bytes=$(printf '%s' "$1" | wc -c)
+    [[ $token_bytes -ge 32 && "$1" != *["$token_whitespace"]* ]]
+}
 check_ca() {
     [[ -f "$1" ]] || fail "CA file not found: $1"
     openssl x509 -in "$1" -noout >/dev/null 2>&1 || fail "Not a PEM certificate: $1"
@@ -579,7 +583,7 @@ if $install_agent; then
     fi
     $monitor_docker || $monitor_systemd || fail 'No host monitoring source selected or available.'
     ask_secret agent_token 'Existing agent token (blank generates a new token)'
-    [[ -z "$agent_token" ]] || valid_token "$agent_token" || fail 'Agent tokens require at least 32 characters and no whitespace.'
+    [[ -z "$agent_token" ]] || valid_token "$agent_token" || fail 'Agent tokens require at least 32 UTF-8 bytes and no whitespace.'
     if ! $install_ui || yesno 'Expose this agent for additional UI hosts' n; then
         agent_publish=true
         ask_bind agent_bind 'Agent LAN/VPN bind IPv4' "$(suggest_bind)"
@@ -607,7 +611,7 @@ if $install_ui; then
         while true; do
             ask_secret remote_token 'Remote agent token (must match its configured token)'
             valid_token "$remote_token" && break
-            printf 'Enter at least 32 characters with no whitespace.\n'
+            printf 'Enter at least 32 UTF-8 bytes with no whitespace.\n'
         done
         ask remote_ca_source 'Remote agent public CA PEM path (blank uses system CAs)' ''
         [[ -z "$remote_ca_source" ]] || check_ca "$remote_ca_source"
@@ -773,6 +777,7 @@ COMPOSE
     fi
     printf '    restart: unless-stopped\n    environment:\n' >> compose.yaml
     env_field ASPNETCORE_ENVIRONMENT Production >> compose.yaml
+    env_field ReverseProxy__KnownNetworks__0 "$agent_subnet" >> compose.yaml
     env_field ConnectionStrings__WebboardDatabase "$connection_string" >> compose.yaml
     env_field Authentication__Jwt__SigningKey "$signing_key" >> compose.yaml
     env_field Monitoring__IntervalSeconds 30 >> compose.yaml

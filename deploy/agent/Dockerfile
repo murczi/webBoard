@@ -7,9 +7,11 @@
 # Build stage: the SDK restores dependencies and compiles the application.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
+COPY Directory.Build.props ./
 
 # Copy project files first so dependency restore can be cached across source edits.
 COPY src/WebBoard.Agent/WebBoard.Agent.csproj src/WebBoard.Agent/
+COPY src/Webboard.Contracts/ src/Webboard.Contracts/
 # Restore NuGet packages for the application and its project references.
 RUN dotnet restore src/WebBoard.Agent/WebBoard.Agent.csproj
 

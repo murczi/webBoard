@@ -48,6 +48,9 @@ public class ModuleManagementModel(
 
         if (CanCreate || CanUpdate) {
             Hosts = await modules.GetHostsAsync(cancellationToken);
+            var unavailable = allModules.Where(x => x.HostId.HasValue && !Hosts.Any(h => h.Id == x.HostId)).DistinctBy(x => x.HostId)
+                .Select(x => new ModuleOptionModel(x.HostId!.Value, $"{x.HostName ?? "Previous host"} (unavailable)") { IsAvailable = false });
+            Hosts = Hosts.Concat(unavailable).ToList();
             Types = await modules.GetTypesAsync(cancellationToken);
         }
         return Page();
@@ -69,6 +72,9 @@ public class ModuleManagementModel(
         try {
             await modules.AddAsync(Module.ToModel(), actorId, "Created module.", cancellationToken);
             TempData["StatusMessage"] = "Module added.";
+        }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
         }
         catch (ArgumentException exception) {
             TempData["ErrorMessage"] = exception.Message;
@@ -93,6 +99,9 @@ public class ModuleManagementModel(
             TempData[updated ? "StatusMessage" : "ErrorMessage"] = updated
                 ? "Module updated."
                 : "The selected module no longer exists.";
+        }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
         }
         catch (ArgumentException exception) {
             TempData["ErrorMessage"] = exception.Message;
@@ -147,6 +156,9 @@ public class ModuleManagementModel(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return StatusCode(504, new { error = "The Docker container request timed out." });
         }
+        catch (Webboard.Web.Services.AgentResponseException exception) {
+            return StatusCode(502, new { error = exception.Message });
+        }
         catch (HttpRequestException) {
             return StatusCode(502, new { error = "The host agent could not read Docker containers." });
         }
@@ -170,6 +182,9 @@ public class ModuleManagementModel(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return StatusCode(504, new { error = "The systemd service request timed out." });
+        }
+        catch (Webboard.Web.Services.AgentResponseException exception) {
+            return StatusCode(502, new { error = exception.Message });
         }
         catch (HttpRequestException exception) {
             return StatusCode(502, new
@@ -220,6 +235,7 @@ public class ModuleManagementModel(
 
     public class ModuleInputModel {
         public int Id { get; set; }
+        [Range(0, long.MaxValue)] public long Version { get; set; }
 
         [Required, StringLength(100)]
         public string Name { get; set; } = string.Empty;
@@ -270,7 +286,7 @@ public class ModuleManagementModel(
 
         public ModuleModel ToModel() => new()
         {
-            Id = Id,
+            Id = Id, Version = Version,
             Name = Name,
             Description = Description,
             HostId = HostId,

@@ -1,36 +1,9 @@
 @model Webboard.Domain.Model.Modules.ModuleModel
-@inject Webboard.Domain.Interfaces.Services.IModuleOperations Operations
-@{
-    IReadOnlyList<string> allowed = [];
-    if (Model.IsEnabled && Model.TypeName is "Docker" or "Systemd"
-        && ModuleAccess.Has(User, ModuleAccess.Read) && ModuleAccess.Has(User, ModuleAccess.Operations)) {
-        allowed = await Operations.AllowedServiceOperationsAsync(Model, Context.RequestAborted);
-    }
-    var available = new[] { "start", "stop", "restart", "enable", "disable" }
-        .Where(operation => allowed.Contains(operation)
-            && !(Model.TypeName == "Docker" && operation is "enable" or "disable")).ToList();
-}
-@if (available.Count > 0) {
-    <div class="dropdown module-operations">
+@using Webboard.Domain.Model.Modules
+@if (ModuleEligibility.CanOperate(Model) && ModuleAccess.Has(User, ModuleAccess.Read) && ModuleAccess.Has(User, ModuleAccess.Operations)) {
+    <div class="dropdown module-operations" data-capabilities-url="@Url.Page("/Operations", "Capabilities", new { moduleId = Model.Id })">
         <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
                 data-bs-toggle="dropdown" aria-expanded="false" aria-label="Operations for @Model.Name">Operations</button>
-        <ul class="dropdown-menu dropdown-menu-end">
-            @foreach (var operation in available) {
-                var label = operation switch {
-                    "start" => Model.TypeName == "Docker" ? "Up" : "Start",
-                    "stop" => Model.TypeName == "Docker" ? "Down" : "Stop",
-                    "restart" => "Restart", "enable" => "Enable", _ => "Disable"
-                };
-                <li>
-                    <form method="post" asp-page="/Operations" asp-page-handler="Execute" class="operation-form"
-                          data-confirm="@label @Model.Name on @Model.HostName?">
-                        <input type="hidden" name="moduleId" value="@Model.Id" />
-                        <input type="hidden" name="operation" value="@operation" />
-                        <input type="hidden" name="requestId" value="@Guid.NewGuid()" />
-                        <button type="submit" class="dropdown-item">@label</button>
-                    </form>
-                </li>
-            }
-        </ul>
+        <ul class="dropdown-menu dropdown-menu-end" data-operation-actions><li><span class="dropdown-item-text small">Open to load operations…</span></li></ul>
     </div>
 }

@@ -32,6 +32,9 @@ public class UserManagementModel(
     public bool CanReadLogs => AuditLogAccess.HasRead(User);
 
     [BindProperty]
+    public long? PermissionVersion { get; set; }
+
+    [BindProperty]
     public List<UserCrudAccessModel> Access { get; set; } = [];
 
     [BindProperty]
@@ -60,11 +63,12 @@ public class UserManagementModel(
         CancellationToken cancellationToken) {
         if (!CanUpdateUsers)
             return Forbid();
+        if (PermissionVersion is null) return BadRequest(new { message = "Reload the permission editor before saving." });
         if (CurrentUserId is not int actorId)
             return Challenge();
         if (!ModelState.IsValid || !IsValidAuditComment()) {
             TempData["ErrorMessage"] =
-                $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.";
+                ValidationFeedback.FirstError(ModelState, $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.");
             return await RedisplayAccessAsync(userId, cancellationToken);
         }
 
@@ -74,8 +78,12 @@ public class UserManagementModel(
                 Access,
                 actorId,
                 AuditComment,
+                PermissionVersion.Value,
                 cancellationToken);
             TempData["StatusMessage"] = "CRUD access updated.";
+        }
+        catch (Webboard.Domain.Services.ResourceConflictException exception) {
+            TempData["ErrorMessage"] = exception.Message;
         }
         catch (UnauthorizedAccessException) {
             return Forbid();
@@ -135,7 +143,7 @@ public class UserManagementModel(
         RetryUserName = Users.FirstOrDefault(user => user.Id == userId)?.Name;
         RetryUserId = RetryUserName is null ? null : userId;
         foreach (var item in Access)
-            item.IsReadOnlyResource = item.Resource is "AuditLogs" or "ModuleTypes" or "MonitoringHistory";
+            item.IsReadOnlyResource = PermissionResources.Find(item.Resource)?.IsReadOnly == true;
         return Page();
     }
 

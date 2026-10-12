@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Design;
 public sealed class WebboardDbContextFactory
     : IDesignTimeDbContextFactory<WebboardDbContext> {
     public WebboardDbContext CreateDbContext(string[] args) {
-        Env.TraversePath().Load();
+        Env.NoClobber().TraversePath().Load();
 
         var connectionString =
             Environment.GetEnvironmentVariable(

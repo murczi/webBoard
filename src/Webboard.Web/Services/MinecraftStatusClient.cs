@@ -76,12 +76,7 @@ public sealed class MinecraftStatusClient : IMinecraftStatusClient {
     }
 
     private static bool IsValidEndpoint(string address, int port) =>
-        !string.IsNullOrWhiteSpace(address) &&
-        address.Length <= 253 &&
-        !address.Any(char.IsWhiteSpace) &&
-        !address.Contains('/') &&
-        !address.Contains('\\') &&
-        port is >= 1 and <= 65535;
+        ServerAddress.IsValid(address) && port is >= 1 and <= 65535;
 
     private static async Task WriteHandshakeAsync(
         Stream stream,

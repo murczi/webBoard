@@ -8,30 +8,29 @@ using Domain.Model.UserCrudAccess;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
-public class UserAuthenticationRepository(WebboardDbContext dbContext)
+public sealed class UserAuthenticationRepository(WebboardDbContext dbContext)
     : IUserAuthenticationRepository {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public UserAuthenticationRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
+
     public async Task<UserLoginModel?> FindByNameAsync(
         string name,
         CancellationToken cancellationToken = default) {
-        var normalizedName = name.ToLower();
-        var user = await dbContext.Users
+        var user = await dbContext.Users.FromSqlInterpolated($"""
+            SELECT * FROM "Users" WHERE lower("Name") = lower({name}) AND NOT "DeletionFlag"
+            """)
             .AsNoTracking()
             .Include(candidate => candidate.CrudAccess)
-            .SingleOrDefaultAsync(
-                candidate => candidate.Name.ToLower() == normalizedName &&
-                             !candidate.DeletionFlag,
-                cancellationToken);
+            .SingleOrDefaultAsync(cancellationToken);
 
         if (user is null)
             return null;
 
-        return new UserLoginModel
-        {
+        return new UserLoginModel {
             Id = user.Id,
             Name = user.Name,
             PasswordHash = user.PasswordHash,
-            Access = user.CrudAccess.Select(access => new UserCrudAccessModel
-            {
+            Access = user.CrudAccess.Select(access => new UserCrudAccessModel {
                 Id = access.Id,
                 UserId = access.UserId,
                 Resource = access.Resource,
@@ -47,11 +46,12 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
     public Task<bool> UserNameExistsAsync(
         string name,
         CancellationToken cancellationToken = default) {
-        var normalizedName = name.ToLower();
-        return dbContext.Users.AnyAsync(
-            candidate => candidate.Name.ToLower() == normalizedName,
-            cancellationToken);
+        return NameExistsAsync(name, cancellationToken);
     }
+    private async Task<bool> NameExistsAsync(string name, CancellationToken cancellationToken) =>
+        await dbContext.Database.SqlQuery<int>($"""
+            SELECT COUNT(*)::integer AS "Value" FROM "Users" WHERE lower("Name") = lower({name})
+            """).SingleAsync(cancellationToken) > 0;
 
     public async Task<bool> CreateAsync(
         string name,
@@ -64,21 +64,19 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
         if (await UserNameExistsAsync(name, cancellationToken))
             return false;
 
-        var now = DateTime.UtcNow;
-        var entity = new UserEntity
-        {
+        var now = timeProvider.GetUtcNow();
+        var entity = new UserEntity {
             Name = name,
             PasswordHash = passwordHash,
             DeletionFlag = false,
             DateCreated = now,
             DateUpdated = now
         };
-        if (!await dbContext.Users.AnyAsync(cancellationToken)) {
-            foreach (var resource in new[] { "Users", "Hosts", "Modules", "ModuleTypes", "AuditLogs", "MonitoringHistory" }) {
-                var readOnly = resource is "ModuleTypes" or "AuditLogs" or "MonitoringHistory";
-                entity.CrudAccess.Add(new UserCrudAccessEntity
-                {
-                    Resource = resource,
+        if (!await dbContext.Users.AnyAsync(user => !user.Name.StartsWith("__legacy_actor_"), cancellationToken)) {
+            foreach (var resource in PermissionResources.All) {
+                var readOnly = resource.IsReadOnly;
+                entity.CrudAccess.Add(new UserCrudAccessEntity {
+                    Resource = resource.Key,
                     CanRead = true,
                     CanOperate = false,
                     CanCreate = !readOnly,
@@ -89,8 +87,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
             }
         }
         dbContext.Users.Add(entity);
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = "Created user.",
             DateCreated = now,
@@ -102,10 +99,8 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return true;
-        }
-        catch (DbUpdateException exception)
-            when (exception.InnerException is PostgresException
-                  { SqlState: PostgresErrorCodes.UniqueViolation }) {
+        } catch (DbUpdateException exception)
+              when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation }) {
             dbContext.ChangeTracker.Clear();
             return false;
         }

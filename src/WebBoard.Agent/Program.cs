@@ -1,5 +1,6 @@
 using System.Net.Sockets;
-using WebBoard.Agent;
+using Webboard.Agent;
+using Webboard.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,39 +23,38 @@ app.Use(async (context, next) => {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         return;
     }
+    if (!AgentProtocol.SupportsHeader(context.Request.Headers[AgentProtocol.Header].Select(value => value!))) {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { message = "Unsupported agent protocol version." });
+        return;
+    }
+    context.Response.Headers[AgentProtocol.Header] = AgentProtocol.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
     await next(context);
 });
 
-if (app.Environment.IsDevelopment())
-{
+if (app.Environment.IsDevelopment()) {
     app.MapOpenApi();
 }
 
-app.MapGet("/health", () => Results.Ok(new
-   {
-       Status = "Healthy",
-       Service = "WebBoard.Agent"
-   }))
+app.MapGet("/health", () => Results.Ok(new AgentHealthResponse("Healthy", "WebBoard.Agent", AgentProtocol.Version)))
    .WithName("GetHealth")
    .WithTags("Health");
 
 app.MapGet("/docker/containers", async (
         DockerSocketClient docker,
         CancellationToken cancellationToken) => {
-    try {
-        return Results.Ok(await docker.GetContainersAsync(cancellationToken));
-    }
-    catch (Exception exception) when (exception is HttpRequestException or SocketException) {
-        return Results.Problem(
-            "Docker could not be reached through its Unix socket.",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-        return Results.Problem(
-            "The Docker socket request timed out.",
-            statusCode: StatusCodes.Status504GatewayTimeout);
-    }
-})
+            try {
+                return Results.Ok(await docker.GetContainersAsync(cancellationToken));
+            } catch (Exception exception) when (exception is HttpRequestException or SocketException) {
+                return Results.Problem(
+                    "Docker could not be reached through its Unix socket.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+                return Results.Problem(
+                    "The Docker socket request timed out.",
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+        })
    .WithName("GetDockerContainers")
    .WithTags("Docker");
 
@@ -62,41 +62,37 @@ app.MapGet("/docker/containers/{containerId}/status", async (
         string containerId,
         DockerSocketClient docker,
         CancellationToken cancellationToken) => {
-    try {
-        var status = await docker.GetContainerStatusAsync(containerId, cancellationToken);
-        return status is null ? Results.NotFound() : Results.Ok(status);
-    }
-    catch (Exception exception) when (exception is HttpRequestException or SocketException) {
-        return Results.Problem(
-            "Docker could not be reached through its Unix socket.",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-        return Results.Problem(
-            "The Docker socket request timed out.",
-            statusCode: StatusCodes.Status504GatewayTimeout);
-    }
-})
+            try {
+                var status = await docker.GetContainerStatusAsync(containerId, cancellationToken);
+                return status is null ? Results.NotFound() : Results.Ok(status);
+            } catch (Exception exception) when (exception is HttpRequestException or SocketException) {
+                return Results.Problem(
+                    "Docker could not be reached through its Unix socket.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+                return Results.Problem(
+                    "The Docker socket request timed out.",
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+        })
    .WithName("GetDockerContainerStatus")
    .WithTags("Docker");
 
 app.MapGet("/systemd/services", async (
         SystemdClient systemd,
         CancellationToken cancellationToken) => {
-    try {
-        return Results.Ok(await systemd.GetServicesAsync(cancellationToken));
-    }
-    catch (InvalidOperationException exception) {
-        return Results.Problem(
-            exception.Message,
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-        return Results.Problem(
-            "The systemd request timed out.",
-            statusCode: StatusCodes.Status504GatewayTimeout);
-    }
-})
+            try {
+                return Results.Ok(await systemd.GetServicesAsync(cancellationToken));
+            } catch (InvalidOperationException exception) {
+                return Results.Problem(
+                    exception.Message,
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+                return Results.Problem(
+                    "The systemd request timed out.",
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+        })
    .WithName("GetSystemdServices")
    .WithTags("systemd");
 
@@ -104,21 +100,19 @@ app.MapGet("/systemd/services/{serviceName}/status", async (
         string serviceName,
         SystemdClient systemd,
         CancellationToken cancellationToken) => {
-    try {
-        var status = await systemd.GetServiceStatusAsync(serviceName, cancellationToken);
-        return status is null ? Results.NotFound() : Results.Ok(status);
-    }
-    catch (InvalidOperationException exception) {
-        return Results.Problem(
-            exception.Message,
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-        return Results.Problem(
-            "The systemd request timed out.",
-            statusCode: StatusCodes.Status504GatewayTimeout);
-    }
-})
+            try {
+                var status = await systemd.GetServiceStatusAsync(serviceName, cancellationToken);
+                return status is null ? Results.NotFound() : Results.Ok(status);
+            } catch (InvalidOperationException exception) {
+                return Results.Problem(
+                    exception.Message,
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+                return Results.Problem(
+                    "The systemd request timed out.",
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+        })
    .WithName("GetSystemdServiceStatus")
    .WithTags("systemd");
 
@@ -128,8 +122,7 @@ app.MapGet("/capabilities", async (string kind, string target, AgentOperations o
             var container = await docker.GetContainerStatusAsync(target, token);
             return Results.Ok(container is not null && (operations.Allows("Docker", container.Id) || operations.Allows("Docker", container.Name))
                 ? new[] { "start", "stop", "restart" } : Array.Empty<string>());
-        }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException) { return Results.StatusCode(503); }
+        } catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException) { return Results.StatusCode(503); }
     }
     return Results.Ok(kind == "Systemd" && operations.Allows("Systemd", target)
         ? new[] { "start", "stop", "restart", "enable", "disable" } : Array.Empty<string>());
@@ -137,12 +130,7 @@ app.MapGet("/capabilities", async (string kind, string target, AgentOperations o
 app.MapPost("/operations", async (OperationRequest request, AgentOperations operations, IHostApplicationLifetime lifetime) => {
     try {
         return Results.Ok(await operations.ExecuteAsync(request, lifetime.ApplicationStopping));
-    }
-    catch (UnauthorizedAccessException) { return Results.StatusCode(403); }
-    catch (ArgumentException) { return Results.BadRequest(new { message = "Invalid operation or configuration." }); }
-    catch (InvalidOperationException) { return Results.Conflict(new { message = "Another operation is running." }); }
-    catch (OperationCanceledException) { return Results.Json(new OperationResult(false, "Operation timed out; verify target state before retrying.", TimedOut: true), statusCode: 504); }
-    catch (HttpRequestException) { return Results.Json(new OperationResult(false, "Docker communication failed; verify target state before retrying."), statusCode: 502); }
+    } catch (UnauthorizedAccessException) { return Results.StatusCode(403); } catch (ArgumentException) { return Results.BadRequest(new { message = "Invalid operation or configuration." }); } catch (InvalidOperationException) { return Results.Conflict(new { message = "Another operation is running." }); } catch (OperationCanceledException) { return Results.Json(new OperationResult(false, "Operation timed out; verify target state before retrying.", TimedOut: true) { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Timeout }, statusCode: 504); } catch (HttpRequestException) { return Results.Json(new OperationResult(false, "Docker communication failed; verify target state before retrying.") { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Transport }, statusCode: 502); }
 });
 app.Run();
 

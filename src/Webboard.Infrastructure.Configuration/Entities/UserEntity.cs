@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class UserEntity {
+    public long PermissionVersion { get; set; }
     public int Id { get; set; }
 
     public required string Name { get; set; }
@@ -9,9 +10,9 @@ public class UserEntity {
 
     public bool DeletionFlag { get; set; }
 
-    public DateTime DateCreated { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
-    public DateTime DateUpdated { get; set; }
+    public DateTimeOffset DateUpdated { get; set; }
 
     public ICollection<AuditLogEntity> AuditLogsAsActor { get; set; }
         = new List<AuditLogEntity>();

@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Test;
 
 using System.IdentityModel.Tokens.Jwt;
+using Domain.Interfaces.Services;
 using Configuration;
 using Configuration.Entities;
 using Domain.Model.AuditLogs;
@@ -43,6 +44,10 @@ public sealed class UserAccessTests : IAsyncLifetime {
     private WebboardDbContext Context() => new(new DbContextOptionsBuilder<WebboardDbContext>()
         .UseNpgsql(connectionString).Options);
 
+    private async Task<long> ReadPermissionVersionAsync(int userId) {
+        await using var db = Context(); return await db.Users.Where(x => x.Id == userId).Select(x => x.PermissionVersion).SingleAsync();
+    }
+
     private async Task<int> Register(string name) {
         await using var db = Context();
         var repository = new UserAuthenticationRepository(db);
@@ -50,6 +55,99 @@ public sealed class UserAccessTests : IAsyncLifetime {
         return (await repository.FindByNameAsync(name))!.Id;
     }
 
+
+    [PostgresFact]
+    public async Task StaleHostModuleAndPermissionEditsDoNotOverwriteNewerChanges() {
+        var actor = await Register("admin"); var user = await Register("target");
+        await using var first = Context(); await using var second = Context();
+        var permissions = new UserCrudAccessService(new UserCrudAccessRepository(first));
+        await permissions.SaveAccessAsync(user, [new() { Resource = "Modules", CanRead = true }], actor, "First grant", 0);
+        await Assert.ThrowsAsync<ResourceConflictException>(() => permissions.SaveAccessAsync(user, [new() { Resource = "Users", CanRead = true }], actor, "Stale grant", 0));
+        var grants = await permissions.GetAccessAsync(user);
+        Assert.True(grants.Single(x => x.Resource == "Modules").CanRead); Assert.False(grants.Single(x => x.Resource == "Users").CanRead);
+        var hosts = new HostRepository(first); var otherHosts = new HostRepository(second);
+        await hosts.AddAsync(new() { Name = "Original", AgentBaseUrl = "https://agent.test", DateCreated = DateTimeOffset.UtcNow }, actor, "Create");
+        var host = (await hosts.GetAllAsync()).Single(); var staleHost = (await otherHosts.GetAllAsync()).Single();
+        host.Name = "Newer"; Assert.True(await hosts.UpdateAsync(host, actor, "First edit"));
+        staleHost.Name = "Stale"; await Assert.ThrowsAsync<ResourceConflictException>(() => otherHosts.UpdateAsync(staleHost, actor, "Stale edit"));
+        var modules = new ModuleRepository(first); var otherModules = new ModuleRepository(second);
+        await modules.AddAsync(new() { Name = "Original module", TypeId = 1, IsEnabled = true, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow }, actor, "Create");
+        var module = (await modules.GetAllAsync()).Single(); var staleModule = (await otherModules.GetAllAsync()).Single();
+        module.Name = "Newer module"; module.DateUpdated = DateTimeOffset.UtcNow; Assert.True(await modules.UpdateAsync(module, actor, "First edit"));
+        staleModule.Name = "Stale module"; await Assert.ThrowsAsync<ResourceConflictException>(() => otherModules.UpdateAsync(staleModule, actor, "Stale edit"));
+        Assert.Equal("Newer", (await hosts.GetAllAsync()).Single().Name); Assert.Equal("Newer module", (await modules.GetAllAsync()).Single().Name);
+    }
+
+    [PostgresFact]
+    public async Task MonitoringProjectionMigrationCoalescesExistingSamplesAndPreservesGaps() {
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20261012095122_PreserveOperationFailures");
+        await db.Database.ExecuteSqlRawAsync("INSERT INTO \"Modules\" (\"FriendlyName\",\"TypeId\",\"IsEnabled\",\"DateCreated\",\"DateUpdated\") VALUES ('history',1,true,now(),now())");
+        var id = await db.Database.SqlQueryRaw<int>("SELECT \"Id\" AS \"Value\" FROM \"Modules\"").SingleAsync(); var start = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds());
+        db.MonitoringResults.AddRange(
+            new() { ModuleId = id, Timestamp = start, FreshUntil = start.AddSeconds(90), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" },
+            new() { ModuleId = id, Timestamp = start.AddSeconds(30), FreshUntil = start.AddSeconds(120), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" },
+            new() { ModuleId = id, Timestamp = start.AddSeconds(180), FreshUntil = start.AddSeconds(270), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" });
+        await db.SaveChangesAsync(); await db.Database.MigrateAsync();
+        var blocks = await db.MonitoringBlocks.OrderBy(x => x.Start).ToListAsync();
+        Assert.Equal(2, blocks.Count); Assert.Equal(start.AddSeconds(120), blocks[0].End);
+        Assert.Equal(start.AddSeconds(180), blocks[1].Start);
+    }
+
+    [PostgresFact]
+    public async Task DatabaseRejectsCaseVariantsAndRepositoryReturnsAValidationConflict() {
+        var actor = await Register("host-admin");
+        await using var first = Context(); await using var second = Context();
+        var one = new HostRepository(first); var two = new HostRepository(second);
+        Assert.False(await one.NameExistsAsync("Server")); Assert.False(await two.NameExistsAsync("server"));
+        await one.AddAsync(new() { Name = "Server", AgentBaseUrl = "https://agent.test", DateCreated = DateTime.UtcNow }, actor, "Create");
+        await Assert.ThrowsAsync<ArgumentException>(() => two.AddAsync(new() { Name = "server", AgentBaseUrl = "https://agent.test", DateCreated = DateTime.UtcNow }, actor, "Create"));
+        Assert.True(await one.NameExistsAsync("SERVER"));
+        Assert.Equal(1, await first.Hosts.CountAsync());
+    }
+
+    [PostgresFact]
+    public async Task SteamDowngradeArchivesConfigurationAndDisablesDependentModules() {
+        await using var db = Context();
+        db.Modules.Add(new() {
+            FriendlyName = "Steam",
+            TypeId = 5,
+            SteamServerAddress = "steam.test",
+            SteamQueryPort = 27015,
+            IsEnabled = true,
+            DateCreated = DateTimeOffset.UtcNow,
+            DateUpdated = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+        await db.GetService<IMigrator>().MigrateAsync("20260929103515_AddModuleOperationsAndPermissions");
+        Assert.Equal(1, await db.Database.SqlQueryRaw<int>("SELECT \"TypeId\" AS \"Value\" FROM \"Modules\"").SingleAsync());
+        Assert.False(await db.Database.SqlQueryRaw<bool>("SELECT \"IsEnabled\" AS \"Value\" FROM \"Modules\"").SingleAsync());
+        Assert.Equal("steam.test", await db.Database.SqlQueryRaw<string>("SELECT \"Configuration\" ->> 'SteamServerAddress' AS \"Value\" FROM \"ModuleRollbackArchive\"").SingleAsync());
+        await db.Database.MigrateAsync();
+    }
+
+    [PostgresFact]
+    public async Task PopulatedInitialSchemaPreservesModulesActorsAndAdministratorBootstrap() {
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20260711191703_Initial");
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "AuditLogs" ALTER COLUMN "ActorUserId" DROP NOT NULL;
+            INSERT INTO "Modules" ("Id", "Name", "IsEnabled", "SortOrder", "CreatedAtUtc", "UpdatedAtUtc")
+            VALUES (1, 'legacy', true, 0, now(), now());
+            INSERT INTO "AuditLogs" ("ModuleId", "ActorUserId", "AuditComment", "DateCreated")
+            VALUES (1, 42, 'Historical change', now()), (1, NULL, 'System event', now());
+            """);
+        await db.Database.MigrateAsync();
+        Assert.Equal(1, (await db.Modules.SingleAsync()).TypeId);
+        Assert.Equal(new[] { 0, 42 }, await db.AuditLogs.OrderBy(x => x.ActorId).Select(x => x.ActorId).ToArrayAsync());
+        Assert.All(await db.Users.ToListAsync(), user => Assert.True(user.DeletionFlag));
+        Assert.True(await new UserAuthenticationRepository(db).CreateAsync("real-admin", "unused"));
+        Assert.Equal(6, await db.UserCrudAccess.CountAsync());
+        Assert.True((await db.Users.SingleAsync(x => x.Name == "real-admin")).Id > 42);
+        db.Modules.Add(new() { FriendlyName = "next", TypeId = 1, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.Modules.CountAsync());
+    }
 
     [PostgresFact]
     public async Task AuditSearchFiltersBeforePagingAndIncludesDeletedHistory() {
@@ -62,18 +160,32 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var timestamp = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
         for (var i = 0; i < 31; i++)
             db.AuditLogs.Add(new AuditLogEntity {
-                ActorId = actor, HostId = host.Id, Actor = null!, Comment = $"change {i}",
-                DateCreated = timestamp, Action = AuditAction.Update
+                ActorId = actor,
+                HostId = host.Id,
+                Actor = null!,
+                Comment = $"change {i}",
+                DateCreated = timestamp,
+                Action = AuditAction.Update
             });
         db.AuditLogs.Add(new AuditLogEntity {
-            ActorId = otherActor, UserId = actor, Actor = null!, Comment = "permission event",
-            DateCreated = timestamp.AddDays(1), Action = AuditAction.PermissionsChanged
+            ActorId = otherActor,
+            UserId = actor,
+            Actor = null!,
+            Comment = "permission event",
+            DateCreated = timestamp.AddDays(1),
+            Action = AuditAction.PermissionsChanged
         });
         await db.SaveChangesAsync();
         await db.Users.Where(u => u.Id == actor).ExecuteUpdateAsync(u => u.SetProperty(x => x.DeletionFlag, true));
         var service = new AuditLogService(new AuditLogRepository(db));
-        var query = new AuditLogQuery { Resource = "Hosts", Action = AuditAction.Update, ActorId = actor, TargetId = host.Id,
-            FromUtc = timestamp.Date, UntilUtc = timestamp.Date.AddDays(1) };
+        var query = new AuditLogQuery {
+            Resource = "Hosts",
+            Action = AuditAction.Update,
+            ActorId = actor,
+            TargetId = host.Id,
+            FromUtc = timestamp.Date,
+            UntilUtc = timestamp.Date.AddDays(1)
+        };
         var first = await service.SearchAsync(query);
         var second = await service.SearchAsync(query with { Page = 2 });
         Assert.Equal(31, first.TotalItems);
@@ -109,6 +221,18 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var result = await new AuditLogService(new AuditLogRepository(db)).SearchAsync(new AuditLogQuery { Action = AuditAction.Legacy });
         Assert.Equal(2, result.Items.Count);
         Assert.All(result.Items, item => Assert.Equal(AuditAction.Legacy, item.Action));
+    }
+
+    [PostgresFact]
+    public async Task UserLookupAndUniquenessDoNotDependOnCurrentCulture() {
+        var id = await Register("ADMIN");
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        try {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+            await using var db = Context(); var users = new UserAuthenticationRepository(db);
+            Assert.Equal(id, (await users.FindByNameAsync("ADMIN"))!.Id);
+            Assert.True(await users.UserNameExistsAsync("ADMIN"));
+        } finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
     }
 
     [PostgresFact]
@@ -174,7 +298,8 @@ public sealed class UserAccessTests : IAsyncLifetime {
             new() { Resource = "Modules", CanOperate = true },
             new() { Resource = "Hosts", CanOperate = true },
             new() { Resource = "AuditLogs", CanOperate = true }
-        ], admin, "Grant operations");
+        ], admin, "Grant operations",
+        0);
         var grants = await service.GetAccessAsync(user);
         var module = Assert.Single(grants, x => x.Resource == "Modules");
         Assert.True(module.CanOperate); Assert.True(module.CanRead); Assert.False(module.CanUpdate);
@@ -185,7 +310,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         Assert.Contains(token.Claims, x => x.Value == ModuleAccess.Read);
         Assert.DoesNotContain(token.Claims, x => x.Value is "Modules:start" or "Modules:executecommand");
         db.ChangeTracker.Clear();
-        await service.SaveAccessAsync(user, [], admin, "Revoke operations");
+        await service.SaveAccessAsync(user, [], admin, "Revoke operations", await ReadPermissionVersionAsync(user));
         token = new JwtSecurityTokenHandler().ReadJwtToken((await sessions.RefreshTokenAsync("operator"))!);
         Assert.DoesNotContain(token.Claims, x => x.Value == ModuleAccess.Operations);
     }
@@ -223,8 +348,9 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var user = await Register("user");
         await using var db = Context();
         var service = new UserCrudAccessService(new UserCrudAccessRepository(db));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAccessAsync(
-            user, [new() { Resource = "Users", CanUpdate = true }], user, "Self promotion"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await service.SaveAccessAsync(
+            user, [new() { Resource = "Users", CanUpdate = true }], user, "Self promotion",
+            0));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteUserAsync(admin, user, "Delete admin"));
         Assert.False(await db.UserCrudAccess.AnyAsync(x => x.UserId == user));
         Assert.False((await db.Users.FindAsync(admin))!.DeletionFlag);
@@ -243,7 +369,8 @@ public sealed class UserAccessTests : IAsyncLifetime {
             new() { Resource = "ModuleTypes", CanRead = true, CanUpdate = true },
             new() { Resource = "AuditLogs", CanRead = true, CanDelete = true },
             new() { Resource = "MonitoringHistory", CanRead = true, CanUpdate = true }
-        ], admin, "Grant access");
+        ], admin, "Grant access",
+        0);
         var grants = await service.GetAccessAsync(user);
         Assert.All(grants, grant => Assert.True(grant.CanRead));
         Assert.All(grants.Where(x => x.IsReadOnlyResource), grant => {
@@ -253,7 +380,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         });
         // Update permission delegates permission management, but does not grant deletion.
         db.ChangeTracker.Clear();
-        await service.SaveAccessAsync(user, [new() { Resource = "Users", CanUpdate = true }], user, "Update own grants");
+        await service.SaveAccessAsync(user, [new() { Resource = "Users", CanUpdate = true }], user, "Update own grants", await ReadPermissionVersionAsync(user));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteUserAsync(admin, user, "Delete admin"));
     }
 
@@ -263,7 +390,7 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var user = await Register("user");
         await using var db = Context();
         var service = new UserCrudAccessService(new UserCrudAccessRepository(db));
-        await service.SaveAccessAsync(user, [new() { Resource = "Users", CanUpdate = true }], admin, "Delegate");
+        await service.SaveAccessAsync(user, [new() { Resource = "Users", CanUpdate = true }], admin, "Delegate", await ReadPermissionVersionAsync(user));
         var sessions = new JwtSessionService(new UserAuthenticationRepository(db), Options.Create(new JwtOptions {
             SigningKey = new string('x', 64)
         }));
@@ -271,9 +398,10 @@ public sealed class UserAccessTests : IAsyncLifetime {
         Assert.Contains(token.Claims, claim => claim.Value == UserAccess.Update);
         Assert.Contains(token.Claims, claim => claim.Value == UserAccess.Read);
         db.ChangeTracker.Clear();
-        await service.SaveAccessAsync(user, [], admin, "Revoke");
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAccessAsync(
-            user, [new() { Resource = "Users", CanUpdate = true }], user, "Stale session"));
+        await service.SaveAccessAsync(user, [], admin, "Revoke", await ReadPermissionVersionAsync(user));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await service.SaveAccessAsync(
+            user, [new() { Resource = "Users", CanUpdate = true }], user, "Stale session",
+            0));
     }
 
     [PostgresFact]

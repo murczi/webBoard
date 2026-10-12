@@ -1,13 +1,18 @@
 namespace Webboard.Infrastructure.Test;
+
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using WebBoard.Agent;
+using Agent;
 
 public sealed class AgentOperationTests {
     [Theory]
-    [InlineData("start", "example")] [InlineData("stop", "example")] [InlineData("restart", "example")]
-    [InlineData("start", "012345")] [InlineData("stop", "012345")] [InlineData("restart", "012345")]
+    [InlineData("start", "example")]
+    [InlineData("stop", "example")]
+    [InlineData("restart", "example")]
+    [InlineData("start", "012345")]
+    [InlineData("stop", "012345")]
+    [InlineData("restart", "012345")]
     public async Task AllowedDockerTargetPermitsAllOperationsUsingTheConfiguredSocket(string operation, string allowedTarget) {
         var directory = Path.Combine(Path.GetTempPath(), "webboard-socket-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "docker.sock");
@@ -39,11 +44,12 @@ public sealed class AgentOperationTests {
                 .ExecuteAsync(new(Guid.NewGuid(), 1, "Docker", "example", operation), deadline.Token)).Success);
             Assert.Empty(runner.Calls);
             await serve;
-        }
-        finally { Directory.Delete(directory, true); }
+        } finally { Directory.Delete(directory, true); }
     }
     [Theory]
-    [InlineData("start")] [InlineData("stop")] [InlineData("restart")]
+    [InlineData("start")]
+    [InlineData("stop")]
+    [InlineData("restart")]
     public async Task SystemdRuntimeControlsUseFixedArguments(string operation) {
         var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0"] = "example.service" });
         using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
@@ -55,7 +61,8 @@ public sealed class AgentOperationTests {
         await Assert.ThrowsAsync<ArgumentException>(() => operations.ExecuteAsync(new(Guid.NewGuid(), 1, "Systemd", "--danger.service", operation), default));
     }
     [Theory]
-    [InlineData("enable", "EnableUnitFiles")] [InlineData("disable", "DisableUnitFiles")]
+    [InlineData("enable", "EnableUnitFiles")]
+    [InlineData("disable", "DisableUnitFiles")]
     public async Task UnitFileControlsUseHostBusAndReload(string operation, string method) {
         var runner = new CapturingRunner();
         var result = await new SystemdClient(runner).ControlAsync("example.service", operation, default);
@@ -70,7 +77,8 @@ public sealed class AgentOperationTests {
         Assert.Equal(8, runner.Calls[1].Arguments.Count);
     }
     [Theory]
-    [InlineData(false)] [InlineData(true)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task FailedUnitFileChangeDoesNotReloadAndReloadFailureReportsPartialChange(bool failReload) {
         var runner = new CapturingRunner();
         runner.Results.Enqueue(new(failReload, failReload ? "Done" : "Permission denied", 1, "private output"));
@@ -93,6 +101,8 @@ public sealed class AgentOperationTests {
         release.SetResult(new(false, "Failed", 19)); Assert.Equal(19, (await first).ExitCode);
     }
     [Theory]
+    [InlineData("Systemd", "-bad.service", "start")]
+    [InlineData("Systemd", "bad.SERVICE", "start")]
     [InlineData("Command", "example.service", "execute")]
     [InlineData("Docker", "example", "enable")]
     [InlineData("Systemd", "example.service", "execute")]
@@ -105,7 +115,11 @@ public sealed class AgentOperationTests {
         Assert.Empty(runner.Calls);
     }
     [Theory]
-    [InlineData("start")] [InlineData("stop")] [InlineData("restart")] [InlineData("enable")] [InlineData("disable")]
+    [InlineData("start")]
+    [InlineData("stop")]
+    [InlineData("restart")]
+    [InlineData("enable")]
+    [InlineData("disable")]
     public async Task EverySystemdOperationRequiresAnAllowedTarget(string operation) {
         var config = AgentSecurityTests.Config([]);
         using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
@@ -114,7 +128,11 @@ public sealed class AgentOperationTests {
         Assert.Empty(runner.Calls);
     }
     [Theory]
-    [InlineData("start")] [InlineData("stop")] [InlineData("restart")] [InlineData("enable")] [InlineData("disable")]
+    [InlineData("start")]
+    [InlineData("stop")]
+    [InlineData("restart")]
+    [InlineData("enable")]
+    [InlineData("disable")]
     public async Task AllowedSystemdTargetPermitsEverySupportedOperation(string operation) {
         var config = AgentSecurityTests.Config(new() { ["Controls:Systemd:0"] = "example.service" });
         using var docker = new DockerSocketClient(config); var runner = new CapturingRunner();
@@ -127,12 +145,23 @@ public sealed class AgentOperationTests {
         Assert.Equal(calls, runner.Calls.Count);
     }
     [Fact]
+    public async Task DiscoveryAndControlsUseTheSameBoundedCaptureAndCancellation() {
+        var runner = new ProcessRunner();
+        var capture = await runner.CaptureAsync("/usr/bin/printf", ["%s", new string('a', 200)], TimeSpan.FromSeconds(1), 32, default);
+        Assert.True(capture.Truncated); Assert.Equal(32, capture.StandardOutput.Length); Assert.Equal(0, capture.ExitCode);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        capture = await runner.CaptureAsync("/usr/bin/sleep", ["10"], TimeSpan.FromSeconds(5), 32, cancellation.Token);
+        Assert.True(capture.Interrupted); Assert.False(capture.TimedOut);
+    }
+
+    [Fact]
     public async Task FailedProcessReturnsExitCode() {
         var result = await new ProcessRunner().RunAsync("/usr/bin/false", [], TimeSpan.FromSeconds(1), default);
         Assert.False(result.Success); Assert.Equal(1, result.ExitCode);
     }
     [Theory]
-    [InlineData(false)] [InlineData(true)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task CapabilityDiscoveryHonorsDeadlineAndCallerCancellation(bool cancelCaller) {
         using var handler = new WaitingHandler();
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(310) };
@@ -148,8 +177,7 @@ public sealed class AgentOperationTests {
         public bool Cancelled;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) {
             Started.SetResult();
-            try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
-            catch (OperationCanceledException) { Cancelled = true; throw; }
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, token); } catch (OperationCanceledException) { Cancelled = true; throw; }
             return new HttpResponseMessage(HttpStatusCode.OK);
         }
     }

@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Authentication;
+using Domain.Model.UserCrudAccess;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -13,13 +14,18 @@ using Microsoft.IdentityModel.Tokens;
 public sealed class JwtSessionService(
     IUserAuthenticationRepository users,
     IOptions<JwtOptions> options) {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public JwtSessionService(
+    IUserAuthenticationRepository users,
+    IOptions<JwtOptions> options, TimeProvider timeProvider) : this(users, options) => this.timeProvider = timeProvider;
+
     public const string AccessClaimType = "access";
     public const string RememberMeClaimType = "remember_me";
 
     private readonly JwtOptions jwtOptions = options.Value;
     private readonly PasswordHasher<UserLoginModel> passwordHasher = new();
-    private readonly string dummyPasswordHash = new PasswordHasher<UserLoginModel>()
-        .HashPassword(null!, "invalid-password");
+    private static readonly Lazy<string> dummyPasswordHash = new(() => new PasswordHasher<UserLoginModel>()
+        .HashPassword(null!, "invalid-password"));
 
     public async Task<string?> CreateTokenAsync(
         string userName,
@@ -28,7 +34,7 @@ public sealed class JwtSessionService(
         CancellationToken cancellationToken = default) {
         var user = await users.FindByNameAsync(userName.Trim(), cancellationToken);
         if (user is null) {
-            passwordHasher.VerifyHashedPassword(null!, dummyPasswordHash, password);
+            passwordHasher.VerifyHashedPassword(null!, dummyPasswordHash.Value, password);
             return null;
         }
 
@@ -47,7 +53,7 @@ public sealed class JwtSessionService(
     }
 
     private string CreateToken(UserLoginModel user, bool rememberMe) {
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
@@ -58,13 +64,8 @@ public sealed class JwtSessionService(
             new(RememberMeClaimType, rememberMe.ToString().ToLowerInvariant())
         };
 
-        foreach (var access in user.Access) {
-            AddAccessClaim(claims, access.Resource, "operations", access.CanOperate);
-            AddAccessClaim(claims, access.Resource, "create", access.CanCreate);
-            AddAccessClaim(claims, access.Resource, "read", access.CanRead || access.CanCreate || access.CanUpdate || access.CanDelete);
-            AddAccessClaim(claims, access.Resource, "update", access.CanUpdate);
-            AddAccessClaim(claims, access.Resource, "delete", access.CanDelete);
-        }
+        foreach (var access in user.Access)
+            foreach (var action in PermissionResources.ActionsFor(access)) AddAccessClaim(claims, access.Resource, action, true);
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
@@ -115,7 +116,7 @@ public sealed class JwtSessionService(
         if (rememberMe) {
             var lifetime = GetLifetime(true);
             options.MaxAge = lifetime;
-            options.Expires = DateTimeOffset.UtcNow.Add(lifetime);
+            options.Expires = timeProvider.GetUtcNow().Add(lifetime);
         }
 
         return options;

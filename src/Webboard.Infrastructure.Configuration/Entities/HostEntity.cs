@@ -1,7 +1,10 @@
 namespace Webboard.Infrastructure.Configuration.Entities;
 
 public class HostEntity {
+    public long Version { get; set; }
     public int Id { get; set; }
+
+    public string NormalizedName { get; private set; } = "";
 
     public required string Name { get; set; }
 
@@ -11,7 +14,8 @@ public class HostEntity {
 
     public bool IsEnabled { get; set; }
 
-    public DateTime DateCreated { get; set; }
+    public DateTimeOffset DateUpdated { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
     public ICollection<AuditLogEntity> AuditLogs { get; set; }
         = new List<AuditLogEntity>();

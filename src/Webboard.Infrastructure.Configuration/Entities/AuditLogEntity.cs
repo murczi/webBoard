@@ -5,6 +5,8 @@ public class AuditLogEntity {
 
     public Guid? OperationId { get; set; }
     public string? Operation { get; set; }
+    public bool TimedOut { get; set; }
+    public string? FailureReason { get; set; }
     public string? Outcome { get; set; }
     public int? ExitCode { get; set; }
     public string? Output { get; set; }
@@ -18,7 +20,7 @@ public class AuditLogEntity {
 
     public required string Comment { get; set; }
 
-    public DateTime DateCreated { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
     public int? ModuleId { get; set; }
 

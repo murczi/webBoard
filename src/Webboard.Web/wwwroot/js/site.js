@@ -1,3 +1,5 @@
+window.Webboard = window.Webboard || {};
+window.Webboard.HealthStates = JSON.parse(document.getElementById('health-state-values').textContent);
 document.querySelectorAll('form[data-confirm-delete]').forEach(form => {
     form.addEventListener('submit', event => {
         if (!confirm('Delete “' + form.dataset.confirmDelete + '”? This item will be removed from Webboard.')) event.preventDefault();
@@ -16,4 +18,9 @@ document.querySelectorAll('.table-responsive [data-bs-toggle="dropdown"], .user-
     bootstrap.Dropdown.getOrCreateInstance(button, {
         popperConfig: defaults => ({ ...defaults, strategy: 'fixed' })
     });
+});
+
+document.querySelectorAll('time[data-local-date]').forEach(time => {
+    const date = new Date(time.dateTime);
+    if (!Number.isNaN(date.getTime())) time.textContent = date.toLocaleDateString();
 });

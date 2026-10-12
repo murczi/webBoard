@@ -20,5 +20,5 @@ public sealed class AuditLogModel {
     public AuditAction Action { get; init; }
     public required string ActorName { get; init; }
     public required string Comment { get; init; }
-    public DateTime DateCreated { get; init; }
+    public DateTimeOffset DateCreated { get; init; }
 }

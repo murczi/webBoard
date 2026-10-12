@@ -385,6 +385,7 @@ class InstallerTests(unittest.TestCase):
         self.assert_ok(result)
         self.assertEqual(self.config()['services']['proxy']['ports'][0]['published'], '8443')
         self.assertIn('tls internal', (self.deploy / 'Caddyfile').read_text())
+        self.assertEqual(self.config()['services']['ui']['environment']['ReverseProxy__KnownNetworks__0'], '172.30.0.0/16')
         self.assertTrue((self.deploy / 'browser-ca.crt').exists())
 
     def test_lan_bind_defaults_caddy_site_and_browser_url_to_ip(self):
@@ -473,6 +474,12 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(any('buildx' in call or '--migrate' in call for call in self.calls()))
 
     @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_existing_unicode_token_uses_utf8_bytes(self):
+        token = 'é' * 16
+        self.assert_ok(self.run_installer(self.answers('ui,agent', token=token)))
+        cfg = self.config()
+        self.assertEqual(cfg['services']['agent']['environment']['Security__Tokens__0'], token)
+
     def test_existing_agent_token_is_preserved(self):
         token = 'existing' + 'a' * 64
         self.assert_ok(self.run_installer(self.answers('ui,agent', token=token)))

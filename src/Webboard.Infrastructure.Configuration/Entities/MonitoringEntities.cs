@@ -11,6 +11,7 @@ public sealed class MonitoringResultEntity {
     public string Message { get; set; } = "";
 }
 public sealed class LatestMonitoringEntity {
+    public long? ConfigurationVersion { get; set; }
     public int ModuleId { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public DateTimeOffset FreshUntil { get; set; }

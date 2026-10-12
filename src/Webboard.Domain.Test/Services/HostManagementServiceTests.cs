@@ -43,11 +43,12 @@ public class HostManagementServiceTests {
             new FakeHealthChecker(new AgentHealthResult(false, "Agent timed out.")));
         var host = NewHost("http://agent.local:5080");
         host.Id = 7;
+        var existing = NewHost("http://old.local"); existing.Id = 7; repository.Hosts.Add(existing);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.UpdateAsync(host, 1, "Test change"));
 
-        Assert.Empty(repository.Hosts);
+        Assert.Single(repository.Hosts);
     }
 
     [Theory]
@@ -74,6 +75,17 @@ public class HostManagementServiceTests {
             () => service.AddAsync(NewHost("http://agent.local:5080"), 1, " "));
 
         Assert.Contains("Audit comment", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task OfflineHostCanBeDisabledOrRenamedWithoutAProbe(bool enabled) {
+        var repository = new FakeHostRepository();
+        var current = NewHost("https://offline.test"); current.Id = 1; repository.Hosts.Add(current);
+        var service = new HostManagementService(repository, new FakeHealthChecker(new(false, "Offline")));
+        var change = NewHost("https://offline.test"); change.Id = 1; change.Name = "Renamed"; change.IsEnabled = enabled;
+        Assert.True(await service.UpdateAsync(change, 1, "Maintenance"));
+        Assert.Equal(enabled, repository.Hosts[0].IsEnabled);
     }
 
     private static HostModel NewHost(string agentBaseUrl) => new()
