@@ -21,7 +21,7 @@ public sealed partial class SystemdClient {
             if (!result.Success) return result with { Output = null };
             var reload = await CallManagerAsync("Reload", [], cancellationToken);
             if (!reload.Success) return reload with {
-                Output = null,
+                Output = null, Outcome = OperationOutcome.PartiallyCompleted, FailureReason = OperationFailureReason.PartialCompletion,
                 Message = "Unit-file change completed, but reloading the host systemd manager failed. Verify the service and host reload permission before retrying."
             };
             return result with { Output = null };

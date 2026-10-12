@@ -10,6 +10,7 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLogEntity> {
         builder.ToTable("AuditLogs");
         builder.HasIndex(x => x.OperationId).IsUnique();
         builder.Property(x => x.Operation).HasMaxLength(100);
+        builder.Property(x => x.FailureReason).HasMaxLength(32);
         builder.Property(x => x.Outcome).HasMaxLength(32);
         builder.Property(x => x.Failure).HasMaxLength(1000);
         builder.Property(x => x.Output).HasMaxLength(16384);

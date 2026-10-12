@@ -98,6 +98,19 @@ public sealed class MonitoringTests : IAsyncLifetime {
         Assert.Equal(1, agent.Calls);
     }
     [PostgresFact]
+    public async Task UnknownTimeoutOutcomeSurvivesAuditAndReplayWithoutRedispatch() {
+        await using var db = Context();
+        await db.UserCrudAccess.Where(x => x.Resource == "Modules").ExecuteUpdateAsync(s => s.SetProperty(x => x.CanOperate, true));
+        var agent = new FakeAgent { Result = new(false, "Verify target state", TimedOut: true) { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Timeout } };
+        var operations = new ModuleOperations(db, agent);
+        var request = new ModuleOperationRequest(Guid.NewGuid(), moduleId, "restart");
+        var first = await operations.ExecuteAsync(actorId, request, default);
+        var replay = await operations.ExecuteAsync(actorId, request, default);
+        Assert.Equal(first, replay); Assert.Equal(1, agent.Calls);
+        Assert.Equal("Unknown", (await db.AuditLogs.SingleAsync(x => x.OperationId == request.RequestId)).Outcome);
+    }
+
+    [PostgresFact]
     public async Task OnlyEnabledDockerAndSystemdModulesAcceptSupportedOperations() {
         await using var db = Context();
         var agent = new FakeAgent(); var operations = new ModuleOperations(db, agent);
@@ -148,8 +161,9 @@ public sealed class MonitoringTests : IAsyncLifetime {
     }
     private sealed class FakeAgent : IAgentOperationsClient {
         public int Calls;
+        public ModuleOperationResult Result = new(true, "Done", 0);
         public Task<ModuleOperationResult> ExecuteAsync(string baseUrl, Guid requestId, int moduleId, string kind, string target, string operation, CancellationToken token) {
-            Calls++; return Task.FromResult(new ModuleOperationResult(true, "Done", 0));
+            Calls++; return Task.FromResult(Result);
         }
     }
 }

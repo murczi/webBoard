@@ -5,6 +5,8 @@ public class AuditLogEntity {
 
     public Guid? OperationId { get; set; }
     public string? Operation { get; set; }
+    public bool TimedOut { get; set; }
+    public string? FailureReason { get; set; }
     public string? Outcome { get; set; }
     public int? ExitCode { get; set; }
     public string? Output { get; set; }

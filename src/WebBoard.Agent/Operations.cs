@@ -6,7 +6,10 @@ using Webboard.Domain.Model.Modules;
 using System.Runtime.InteropServices;
 
 public sealed record OperationRequest(Guid RequestId, int ModuleId, string Kind, string Target, string Operation);
-public sealed record OperationResult(bool Success, string Message, int? ExitCode = null, string? Output = null, bool TimedOut = false);
+public sealed record OperationResult(bool Success, string Message, int? ExitCode = null, string? Output = null, bool TimedOut = false) {
+    public OperationOutcome Outcome { get; init; } = Success ? OperationOutcome.Succeeded : TimedOut ? OperationOutcome.TimedOut : OperationOutcome.Failed;
+    public OperationFailureReason FailureReason { get; init; } = TimedOut ? OperationFailureReason.Timeout : OperationFailureReason.None;
+}
 
 public interface IProcessRunner {
     Task<OperationResult> RunAsync(string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken);

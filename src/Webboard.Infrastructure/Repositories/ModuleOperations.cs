@@ -56,7 +56,7 @@ public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClien
                 : new(false, "Another operation is running on this host.");
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or NpgsqlException) {
-            result = new(false, "Operation outcome is unknown. Verify the target before issuing another operation.");
+            result = new(false, "Operation outcome is unknown. Verify the target before issuing another operation.", TimedOut: exception is OperationCanceledException) { Outcome = OperationOutcome.Unknown, FailureReason = exception is OperationCanceledException ? OperationFailureReason.Timeout : OperationFailureReason.Transport };
         }
         finally {
             if (locked && connection.State == System.Data.ConnectionState.Open) {
@@ -66,7 +66,8 @@ public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClien
                 catch (NpgsqlException) { /* Closing the physical connection releases the host lock. */ NpgsqlConnection.ClearPool(connection); }
             }
         }
-        audit.Outcome = result.Success ? "Succeeded" : result.Message.Contains("unknown", StringComparison.OrdinalIgnoreCase) ? "Unknown" : result.TimedOut ? "TimedOut" : "Failed";
+        audit.Outcome = result.Outcome.ToString();
+        audit.TimedOut = result.TimedOut; audit.FailureReason = result.FailureReason.ToString();
         audit.ExitCode = result.ExitCode;
         audit.Output = result.Output is { Length: > 16384 } ? result.Output[..16384] : result.Output;
         audit.Failure = result.Success ? null : result.Message[..Math.Min(result.Message.Length, 1000)];
@@ -76,6 +77,9 @@ public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClien
     }
     private static ModuleOperationResult Previous(AuditLogEntity audit, int actorId, int moduleId, string operation) {
         if (audit.ActorId != actorId || audit.ModuleId != moduleId || audit.Operation != operation) throw new ArgumentException("Request ID has already been used.");
-        return new(audit.Outcome == "Succeeded", audit.Outcome == "Pending" ? "Operation was already submitted; verify target state before retrying." : audit.Failure ?? "Operation completed.", audit.ExitCode, audit.Output);
+        return new(audit.Outcome == "Succeeded", audit.Outcome == "Pending" ? "Operation was already submitted; verify target state before retrying." : audit.Failure ?? "Operation completed.", audit.ExitCode, audit.Output, audit.TimedOut) {
+            Outcome = Enum.TryParse<OperationOutcome>(audit.Outcome, out var outcome) ? outcome : OperationOutcome.Unknown,
+            FailureReason = Enum.TryParse<OperationFailureReason>(audit.FailureReason, out var reason) ? reason : OperationFailureReason.None
+        };
     }
 }

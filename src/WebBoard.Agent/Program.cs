@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using WebBoard.Agent;
+using Webboard.Domain.Model.Modules;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -141,8 +142,8 @@ app.MapPost("/operations", async (OperationRequest request, AgentOperations oper
     catch (UnauthorizedAccessException) { return Results.StatusCode(403); }
     catch (ArgumentException) { return Results.BadRequest(new { message = "Invalid operation or configuration." }); }
     catch (InvalidOperationException) { return Results.Conflict(new { message = "Another operation is running." }); }
-    catch (OperationCanceledException) { return Results.Json(new OperationResult(false, "Operation timed out; verify target state before retrying.", TimedOut: true), statusCode: 504); }
-    catch (HttpRequestException) { return Results.Json(new OperationResult(false, "Docker communication failed; verify target state before retrying."), statusCode: 502); }
+    catch (OperationCanceledException) { return Results.Json(new OperationResult(false, "Operation timed out; verify target state before retrying.", TimedOut: true) { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Timeout }, statusCode: 504); }
+    catch (HttpRequestException) { return Results.Json(new OperationResult(false, "Docker communication failed; verify target state before retrying.") { Outcome = OperationOutcome.Unknown, FailureReason = OperationFailureReason.Transport }, statusCode: 502); }
 });
 app.Run();
 

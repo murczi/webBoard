@@ -56,6 +56,10 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<int?>("HostId")
                         .HasColumnType("integer");
 
@@ -80,6 +84,9 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Property<string>("TargetSnapshot")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("TimedOut")
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("UserId")
                         .HasColumnType("integer");
