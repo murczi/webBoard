@@ -32,6 +32,17 @@ public sealed class MonitoringTests : IAsyncLifetime {
     }
     private WebboardDbContext Context() => new(new DbContextOptionsBuilder<WebboardDbContext>().UseNpgsql(connectionString).Options);
     [PostgresFact]
+    public async Task RangeCrossingRetentionUsesTheSameExplanationAsBlockLookup() {
+        await using var db = Context(); var reader = new MonitoringReader(db, options);
+        var start = DateTimeOffset.UtcNow.AddDays(-31);
+        var history = await reader.HistoryAsync(moduleId, start, start.AddDays(2), default);
+        var block = await reader.BlockAsync(moduleId, start, default);
+        Assert.Equal("Outside retained history", history.Blocks[0].Message);
+        Assert.Equal(block.Message, history.Blocks[0].Message);
+        Assert.True(history.Next > start);
+    }
+
+    [PostgresFact]
     public async Task DisabledHostStopsMonitoringCapabilitiesAndExplainsDashboardState() {
         await using var db = Context();
         await db.Hosts.ExecuteUpdateAsync(s => s.SetProperty(x => x.IsEnabled, false));

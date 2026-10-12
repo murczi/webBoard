@@ -97,7 +97,11 @@ public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions opt
             """).ToListAsync(token) : [];
         if (spans.Count > 2000) { sliceEnd = spans[2000].Start; spans.RemoveAt(2000); }
         var points = spans.Select(x => new MonitoringPoint(x.Start, x.End, (ModuleHealthState)x.State, x.Message)).ToList();
-        return new(moduleId, from, sliceEnd, MonitoringTimeline.Build(points, from, sliceEnd), sliceEnd < until ? sliceEnd : null);
+        var blocks = new List<MonitoringBlock>();
+        if (from < cutoff) blocks.Add(new(from, cutoff < sliceEnd ? cutoff : sliceEnd, ModuleHealthState.Unknown, "Outside retained history"));
+        var retainedStart = from > cutoff ? from : cutoff;
+        if (retainedStart < sliceEnd) blocks.AddRange(MonitoringTimeline.Build(points, retainedStart, sliceEnd));
+        return new(moduleId, from, sliceEnd, blocks, sliceEnd < until ? sliceEnd : null);
     }
     public sealed class HistorySpan {
         public DateTimeOffset Start { get; set; }
