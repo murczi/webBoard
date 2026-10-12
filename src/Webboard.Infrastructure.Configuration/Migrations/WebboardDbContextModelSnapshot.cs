@@ -327,6 +327,40 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringBlockEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("End")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("ModuleId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("Start")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("End");
+
+                    b.HasIndex("ModuleId", "Start");
+
+                    b.ToTable("MonitoringBlocks", (string)null);
+                });
+
             modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringResultEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -505,6 +539,15 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                     b.Navigation("Host");
 
                     b.Navigation("Type");
+                });
+
+            modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringBlockEntity", b =>
+                {
+                    b.HasOne("Webboard.Infrastructure.Configuration.Entities.ModuleEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ModuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Webboard.Infrastructure.Configuration.Entities.MonitoringResultEntity", b =>

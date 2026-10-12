@@ -11,6 +11,7 @@ public static class MonitoringInvalidation {
         var ids = moduleIds.ToArray();
         await db.LatestMonitoring.Where(x => ids.Contains(x.ModuleId)).ExecuteDeleteAsync(token);
         var now = DateTimeOffset.UtcNow;
+        await MonitoringBlockProjection.CutAsync(db, ids, now, token);
         foreach (var id in ids) db.MonitoringResults.Add(new() {
             ModuleId = id, Timestamp = now, FreshUntil = now, ConfigurationRevision = now,
             State = ModuleHealthState.Unknown, Message = "Monitoring configuration changed"

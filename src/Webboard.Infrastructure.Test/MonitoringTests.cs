@@ -62,6 +62,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
         var collector = new MonitoringCollector(db, checker, options);
         await collector.CollectAsync(moduleId, default); await collector.CollectAsync(moduleId, default);
         Assert.Equal(1, checker.Calls); Assert.Equal(1, await db.MonitoringResults.CountAsync());
+        Assert.Single(await db.MonitoringBlocks.ToListAsync());
         var status = Assert.Single(await new MonitoringReader(db, options).LatestAsync(default));
         Assert.Equal(ModuleHealthState.Healthy, status.Health.State); Assert.False(status.IsStale);
         await db.LatestMonitoring.ExecuteUpdateAsync(s => s.SetProperty(x => x.FreshUntil, DateTimeOffset.UtcNow.AddMinutes(-1)));
@@ -100,6 +101,10 @@ public sealed class MonitoringTests : IAsyncLifetime {
             Point(start.AddSeconds(30), start.AddSeconds(120), ModuleHealthState.Healthy, "OK"),
             Point(start.AddSeconds(200), start.AddSeconds(290), ModuleHealthState.Unhealthy, "Timeout"));
         await db.SaveChangesAsync();
+        foreach (var point in await db.MonitoringResults.OrderBy(x => x.Timestamp).ToListAsync()) {
+            await MonitoringBlockProjection.ObserveAsync(db, moduleId, point.Timestamp, point.FreshUntil, point.State, point.Message, default);
+            await db.SaveChangesAsync();
+        }
         var reader = new MonitoringReader(db, options);
         var history = await reader.HistoryAsync(moduleId, start, start.AddSeconds(300), default);
         Assert.Equal(new[] { ModuleHealthState.Healthy, ModuleHealthState.Unknown, ModuleHealthState.Unhealthy, ModuleHealthState.Unknown }, history.Blocks.Select(x => x.State));
@@ -161,6 +166,7 @@ public sealed class MonitoringTests : IAsyncLifetime {
         module.IsEnabled = false; module.DateUpdated = DateTimeOffset.UtcNow;
         Assert.True(await repository.UpdateAsync(module, actorId, "Disabled", default));
         Assert.Empty(await db.LatestMonitoring.ToListAsync());
+        Assert.True((await db.MonitoringBlocks.SingleAsync()).End <= DateTimeOffset.UtcNow);
         Assert.Equal(ModuleHealthState.Unknown, (await db.MonitoringResults.OrderByDescending(x => x.Id).FirstAsync()).State);
     }
     [PostgresFact]

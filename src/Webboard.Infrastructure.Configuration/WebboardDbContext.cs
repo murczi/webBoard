@@ -4,6 +4,7 @@ using Entities;
 using Microsoft.EntityFrameworkCore;
 
 public class WebboardDbContext(DbContextOptions<WebboardDbContext> options) : DbContext(options) {
+    public DbSet<MonitoringBlockEntity> MonitoringBlocks => Set<MonitoringBlockEntity>();
     public DbSet<MonitoringResultEntity> MonitoringResults => Set<MonitoringResultEntity>();
     public DbSet<LatestMonitoringEntity> LatestMonitoring => Set<LatestMonitoringEntity>();
     public DbSet<ModuleTypeEntity> ModuleTypes => Set<ModuleTypeEntity>();

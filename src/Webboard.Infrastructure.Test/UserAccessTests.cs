@@ -52,6 +52,22 @@ public sealed class UserAccessTests : IAsyncLifetime {
 
 
     [PostgresFact]
+    public async Task MonitoringProjectionMigrationCoalescesExistingSamplesAndPreservesGaps() {
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20261012095122_PreserveOperationFailures");
+        db.Modules.Add(new() { FriendlyName = "history", TypeId = 1, IsEnabled = true, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync(); var id = (await db.Modules.SingleAsync()).Id; var start = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds());
+        db.MonitoringResults.AddRange(
+            new() { ModuleId = id, Timestamp = start, FreshUntil = start.AddSeconds(90), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" },
+            new() { ModuleId = id, Timestamp = start.AddSeconds(30), FreshUntil = start.AddSeconds(120), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" },
+            new() { ModuleId = id, Timestamp = start.AddSeconds(180), FreshUntil = start.AddSeconds(270), ConfigurationRevision = start, State = Webboard.Domain.Model.Modules.ModuleHealthState.Healthy, Message = "OK" });
+        await db.SaveChangesAsync(); await db.Database.MigrateAsync();
+        var blocks = await db.MonitoringBlocks.OrderBy(x => x.Start).ToListAsync();
+        Assert.Equal(2, blocks.Count); Assert.Equal(start.AddSeconds(120), blocks[0].End);
+        Assert.Equal(start.AddSeconds(180), blocks[1].Start);
+    }
+
+    [PostgresFact]
     public async Task DatabaseRejectsCaseVariantsAndRepositoryReturnsAValidationConflict() {
         var actor = await Register("host-admin");
         await using var first = Context(); await using var second = Context();

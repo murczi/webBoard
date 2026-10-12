@@ -19,3 +19,12 @@ public sealed class LatestMonitoringConfiguration : IEntityTypeConfiguration<Lat
         builder.HasOne<ModuleEntity>().WithOne().HasForeignKey<LatestMonitoringEntity>(x => x.ModuleId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+public sealed class MonitoringBlockConfiguration : IEntityTypeConfiguration<MonitoringBlockEntity> {
+    public void Configure(EntityTypeBuilder<MonitoringBlockEntity> builder) {
+        builder.ToTable("MonitoringBlocks"); builder.HasKey(x => x.Id);
+        builder.HasIndex(x => new { x.ModuleId, x.Start }); builder.HasIndex(x => x.End);
+        builder.Property(x => x.Message).HasMaxLength(1000);
+        builder.HasOne<ModuleEntity>().WithMany().HasForeignKey(x => x.ModuleId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

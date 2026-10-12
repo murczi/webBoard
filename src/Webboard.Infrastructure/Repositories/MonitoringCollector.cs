@@ -47,6 +47,7 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         latest.Timestamp = now; latest.FreshUntil = now.AddSeconds(options.StaleSeconds); latest.ConfigurationRevision = module.DateUpdated;
         latest.State = result.State; latest.PingMilliseconds = result.PingMilliseconds; latest.Message = message;
         latest.Details = result.Steam is null ? null : JsonSerializer.Serialize(result.Steam);
+        await MonitoringBlockProjection.ObserveAsync(db, moduleId, now, latest.FreshUntil, result.State, message, token);
         await db.SaveChangesAsync(token);
         await transaction.CommitAsync(token);
     }
@@ -64,5 +65,6 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
                 """, token);
             await transaction.CommitAsync(token);
         } while (removed == 10000 && !token.IsCancellationRequested);
+        await db.MonitoringBlocks.Where(x => x.End < cutoff).ExecuteDeleteAsync(token);
     }
 }
