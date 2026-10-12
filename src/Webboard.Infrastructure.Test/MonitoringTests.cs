@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Test;
 using Configuration;
 using Configuration.Entities;
+using Contracts;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 using Domain.Model.Monitoring;

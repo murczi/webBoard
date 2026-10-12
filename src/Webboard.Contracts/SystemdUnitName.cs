@@ -1,4 +1,4 @@
-namespace Webboard.Domain.Model.Modules;
+namespace Webboard.Contracts;
 
 public static class SystemdUnitName {
     public const int MaximumLength = 256;

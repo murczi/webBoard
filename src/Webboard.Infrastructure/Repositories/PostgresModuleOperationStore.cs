@@ -1,6 +1,7 @@
 namespace Webboard.Infrastructure.Repositories;
 using Configuration;
 using Configuration.Entities;
+using Contracts;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Modules;
 using Domain.Model.AuditLogs;

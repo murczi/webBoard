@@ -2,6 +2,7 @@ namespace Webboard.Infrastructure.Test;
 
 using System.Net;
 using System.Text;
+using Contracts;
 using Domain.Model.Modules;
 using Web.Services;
 

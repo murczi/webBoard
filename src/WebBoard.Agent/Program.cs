@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using WebBoard.Agent;
-using Webboard.Domain.Model.Modules;
+using Webboard.Contracts;
+using Webboard.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,12 @@ app.Use(async (context, next) => {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         return;
     }
+    if (!AgentProtocol.SupportsHeader(context.Request.Headers[AgentProtocol.Header].Select(value => value!))) {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { message = "Unsupported agent protocol version." });
+        return;
+    }
+    context.Response.Headers[AgentProtocol.Header] = AgentProtocol.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
     await next(context);
 });
 
@@ -31,11 +38,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapGet("/health", () => Results.Ok(new
-   {
-       Status = "Healthy",
-       Service = "WebBoard.Agent"
-   }))
+app.MapGet("/health", () => Results.Ok(new AgentHealthResponse("Healthy", "WebBoard.Agent", AgentProtocol.Version)))
    .WithName("GetHealth")
    .WithTags("Health");
 

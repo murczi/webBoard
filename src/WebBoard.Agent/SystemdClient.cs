@@ -1,6 +1,6 @@
 namespace WebBoard.Agent;
 
-using Webboard.Domain.Model.Modules;
+using Webboard.Contracts;
 
 public sealed partial class SystemdClient {
     private readonly IProcessRunner process;
@@ -25,15 +25,15 @@ public sealed partial class SystemdClient {
             return result with { Output = null };
         }
         var control = await process.RunAsync("/usr/bin/systemctl",
-            ["--no-ask-password", operation, "--", serviceName], TimeSpan.FromSeconds(30), cancellationToken);
+        ["--no-ask-password", operation, "--", serviceName], TimeSpan.FromSeconds(30), cancellationToken);
         return control with { Output = null };
     }
 
     private Task<OperationResult> CallManagerAsync(string method, string[] arguments, CancellationToken token) =>
         process.RunAsync("/usr/bin/busctl",
-            new[] { "--system", "--allow-interactive-authorization=no", "--timeout=30s", "call",
+        new[] { "--system", "--allow-interactive-authorization=no", "--timeout=30s", "call",
                 "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", method }
-                .Concat(arguments).ToArray(), TimeSpan.FromSeconds(30), token);
+            .Concat(arguments).ToArray(), TimeSpan.FromSeconds(30), token);
 
     public async Task<IReadOnlyList<SystemdServiceDto>> GetServicesAsync(
         CancellationToken cancellationToken) {
@@ -43,17 +43,17 @@ public sealed partial class SystemdClient {
         ], cancellationToken);
 
         return ParsePropertyBlocks(output)
-            .Where(properties =>
-                properties.TryGetValue("Id", out var id) && IsValidServiceName(id) &&
-                properties.GetValueOrDefault("LoadState") != "not-found")
-            .Select(properties => new SystemdServiceDto(
-                properties["Id"],
-                properties.GetValueOrDefault("Description") ?? properties["Id"],
-                properties.GetValueOrDefault("LoadState") ?? "unknown",
-                properties.GetValueOrDefault("ActiveState") ?? "unknown",
-                properties.GetValueOrDefault("SubState") ?? "unknown"))
-            .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+               .Where(properties =>
+                   properties.TryGetValue("Id", out var id) && IsValidServiceName(id) &&
+                   properties.GetValueOrDefault("LoadState") != "not-found")
+               .Select(properties => new SystemdServiceDto(
+               properties["Id"],
+               properties.GetValueOrDefault("Description") ?? properties["Id"],
+               properties.GetValueOrDefault("LoadState") ?? "unknown",
+               properties.GetValueOrDefault("ActiveState") ?? "unknown",
+               properties.GetValueOrDefault("SubState") ?? "unknown"))
+               .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
+               .ToList();
     }
 
     public async Task<SystemdServiceStatusDto?> GetServiceStatusAsync(
@@ -74,12 +74,12 @@ public sealed partial class SystemdClient {
         var activeState = properties.GetValueOrDefault("ActiveState") ?? "unknown";
         var subState = properties.GetValueOrDefault("SubState") ?? "unknown";
         return new SystemdServiceStatusDto(
-            properties.GetValueOrDefault("Id") ?? serviceName,
-            properties.GetValueOrDefault("Description") ?? serviceName,
-            activeState,
-            subState,
-            string.Equals(activeState, "active", StringComparison.OrdinalIgnoreCase),
-            $"{activeState} ({subState})");
+        properties.GetValueOrDefault("Id") ?? serviceName,
+        properties.GetValueOrDefault("Description") ?? serviceName,
+        activeState,
+        subState,
+        string.Equals(activeState, "active", StringComparison.OrdinalIgnoreCase),
+        $"{activeState} ({subState})");
     }
 
     private async Task<string> RunSystemctlAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool allowNonZeroExitCode = false) {
@@ -93,28 +93,13 @@ public sealed partial class SystemdClient {
 
     private static IReadOnlyList<Dictionary<string, string>> ParsePropertyBlocks(string output) =>
         output.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
-            .Select(block => block.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(line => line.Split('=', 2))
-                .Where(parts => parts.Length == 2)
-                .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal))
-            .ToList();
+              .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+              .Select(block => block.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(line => line.Split('=', 2))
+                                    .Where(parts => parts.Length == 2)
+                                    .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal))
+              .ToList();
 
     private static bool IsValidServiceName(string serviceName) => SystemdUnitName.IsValid(serviceName);
 
 }
-
-public sealed record SystemdServiceDto(
-    string Name,
-    string Description,
-    string LoadState,
-    string ActiveState,
-    string SubState);
-
-public sealed record SystemdServiceStatusDto(
-    string Name,
-    string Description,
-    string ActiveState,
-    string SubState,
-    bool IsHealthy,
-    string Message);

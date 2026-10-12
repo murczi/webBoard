@@ -12,6 +12,7 @@ WORKDIR /source
 COPY src/Webboard.Web/Webboard.Web.csproj src/Webboard.Web/
 COPY src/Webboard.Domain/Webboard.Domain.csproj src/Webboard.Domain/
 COPY src/Webboard.Domain.Model/Webboard.Domain.Model.csproj src/Webboard.Domain.Model/
+COPY src/Webboard.Contracts/Webboard.Contracts.csproj src/Webboard.Contracts/
 COPY src/Webboard.Infrastructure/Webboard.Infrastructure.csproj src/Webboard.Infrastructure/
 COPY src/Webboard.Infrastructure.Configuration/Webboard.Infrastructure.Configuration.csproj src/Webboard.Infrastructure.Configuration/
 # Restore NuGet packages for the application and its project references.

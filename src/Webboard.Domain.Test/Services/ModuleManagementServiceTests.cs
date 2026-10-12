@@ -1,5 +1,6 @@
 namespace Webboard.Domain.Test.Services;
 
+using Contracts;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Modules;
 using Domain.Services;

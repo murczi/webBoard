@@ -6,4 +6,5 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <ItemGroup><ProjectReference Include="../Webboard.Contracts/Webboard.Contracts.csproj" /></ItemGroup>
 </Project>

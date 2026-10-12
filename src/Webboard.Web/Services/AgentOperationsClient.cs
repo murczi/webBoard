@@ -1,11 +1,13 @@
 namespace Webboard.Web.Services;
+
+using Contracts;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 using Domain.Model.Hosts;
 public sealed class AgentOperationsClient(HttpClient client) : IAgentOperationsClient {
     public async Task<ModuleOperationResult> ExecuteAsync(string baseUrl, Guid requestId, int moduleId, string kind, string target, string operation, CancellationToken cancellationToken) {
         using var request = new HttpRequestMessage(HttpMethod.Post, AgentEndpoint.Create(baseUrl).For("operations")) {
-            Content = JsonContent.Create(new { requestId, moduleId, kind, target, operation })
+            Content = JsonContent.Create(new Webboard.Contracts.AgentOperationRequest(requestId, moduleId, kind, target, operation))
         };
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         ModuleOperationResult? result = null;

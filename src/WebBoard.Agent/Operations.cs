@@ -2,14 +2,14 @@ namespace WebBoard.Agent;
 
 using System.Diagnostics;
 using System.Text;
-using Webboard.Domain.Model.Modules;
 using System.Runtime.InteropServices;
+using Webboard.Contracts;
 
-public sealed record OperationRequest(Guid RequestId, int ModuleId, string Kind, string Target, string Operation);
-public sealed record OperationResult(bool Success, string Message, int? ExitCode = null, string? Output = null, bool TimedOut = false) {
-    public OperationOutcome Outcome { get; init; } = Success ? OperationOutcome.Succeeded : TimedOut ? OperationOutcome.TimedOut : OperationOutcome.Failed;
-    public OperationFailureReason FailureReason { get; init; } = TimedOut ? OperationFailureReason.Timeout : OperationFailureReason.None;
-}
+// Source-compatible adapters; the wire fields and defaults belong to Contracts.
+public sealed record OperationRequest(Guid RequestId, int ModuleId, string Kind, string Target, string Operation)
+    : AgentOperationRequest(RequestId, ModuleId, Kind, Target, Operation);
+public sealed record OperationResult(bool Success, string Message, int? ExitCode = null, string? Output = null, bool TimedOut = false)
+    : AgentOperationResult(Success, Message, ExitCode, Output, TimedOut);
 
 public sealed record ProcessCaptureResult(int? ExitCode, string StandardOutput, string StandardError,
     bool TimedOut = false, bool Interrupted = false, bool Truncated = false, bool Started = true);

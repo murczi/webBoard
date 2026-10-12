@@ -1,4 +1,6 @@
 namespace Webboard.Domain.Services;
+
+using Contracts;
 using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.Modules;

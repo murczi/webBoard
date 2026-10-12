@@ -11,5 +11,5 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
   </ItemGroup>
 
-  <ItemGroup><ProjectReference Include="../Webboard.Domain.Model/Webboard.Domain.Model.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../Webboard.Contracts/Webboard.Contracts.csproj" /></ItemGroup>
 </Project>

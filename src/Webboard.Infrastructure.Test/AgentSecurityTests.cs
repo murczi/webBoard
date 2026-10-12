@@ -1,5 +1,6 @@
 namespace Webboard.Infrastructure.Test;
 using System.Net;
+using Webboard.Contracts;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,6 +37,38 @@ public sealed class AgentSecurityTests {
         var extra = await client.PostAsJsonAsync("/operations", new { requestId = Guid.NewGuid(), moduleId = 1, kind = "Command", target = "none", operation = "execute", arguments = new[] { "injected" } });
         Assert.Equal(HttpStatusCode.BadRequest, extra.StatusCode);
     }
+    [Theory]
+    [InlineData(null, 200)] [InlineData("1", 200)] [InlineData("2", 400)]
+    public async Task AgentKeepsLegacyRequestsCompatibleAndRejectsUnknownVersions(string? version, int status) {
+        await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Testing").ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["Security:Tokens:0"] = Token })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        if (version is not null) client.DefaultRequestHeaders.Add(AgentProtocol.Header, version);
+        using var response = await client.GetAsync("/health"); Assert.Equal(status, (int)response.StatusCode);
+        if (status == 200) {
+            Assert.Equal("1", Assert.Single(response.Headers.GetValues(AgentProtocol.Header)));
+            var health = await response.Content.ReadFromJsonAsync<AgentHealthResponse>(); Assert.Equal(1, health!.ProtocolVersion);
+        }
+    }
+    [Theory]
+    [InlineData(null, true)] [InlineData("1", true)] [InlineData("2", false)]
+    public async Task ClientAcceptsLegacyAndCurrentResponsesButRejectsUnknownVersions(string? version, bool accepted) {
+        var config = Config(new() { ["Agents:0:BaseUrl"] = "https://agent.test", ["Agents:0:Token"] = Token });
+        using var handler = new AgentAuthenticationHandler(config) { InnerHandler = new VersionHandler(version) };
+        using var client = new HttpClient(handler);
+        if (accepted) Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("https://agent.test/health")).StatusCode);
+        else await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync("https://agent.test/health"));
+    }
+    private sealed class VersionHandler(string? version) : HttpMessageHandler {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) {
+            Assert.Equal("1", Assert.Single(request.Headers.GetValues(AgentProtocol.Header)));
+            var response = new HttpResponseMessage(HttpStatusCode.OK);
+            if (version is not null) response.Headers.Add(AgentProtocol.Header, version);
+            return Task.FromResult(response);
+        }
+    }
+
     [Fact]
     public async Task CapabilityDiscoveryReturnsAllOperationsOnlyForAllowedTargets() {
         await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>

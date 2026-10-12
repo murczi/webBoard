@@ -1,6 +1,7 @@
 namespace Webboard.Web.Security;
 
 using System.Net;
+using Webboard.Contracts;
 using Webboard.Domain.Model.Hosts;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -56,7 +57,7 @@ public sealed class NetworkPolicy(IConfiguration configuration) {
 }
 
 public sealed class AgentAuthenticationHandler(IConfiguration configuration) : DelegatingHandler {
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) {
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) {
         var uri = request.RequestUri ?? throw new HttpRequestException("Missing agent endpoint.");
         var profile = (configuration.GetSection("Agents").Get<AgentConnection[]>() ?? [])
             .SingleOrDefault(candidate => Matches(candidate.BaseUrl, uri));
@@ -64,7 +65,13 @@ public sealed class AgentAuthenticationHandler(IConfiguration configuration) : D
             uri.Scheme != "https" && !(uri.Scheme == "http" && profile.AllowHttpOverEncryptedTransport))
             throw new HttpRequestException("Agent security profile is missing or invalid.");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.Token);
-        return base.SendAsync(request, cancellationToken);
+        request.Headers.Add(AgentProtocol.Header, AgentProtocol.Version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var response = await base.SendAsync(request, cancellationToken);
+        if (response.Headers.TryGetValues(AgentProtocol.Header, out var versions) && !AgentProtocol.SupportsHeader(versions)) {
+            response.Dispose();
+            throw new HttpRequestException("Agent protocol version is not supported.");
+        }
+        return response;
     }
 
     public static bool Matches(string baseUrl, Uri uri) {

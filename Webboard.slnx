@@ -1,5 +1,6 @@
 <Solution>
     <Folder Name="/src/">
+        <Project Path="src/Webboard.Contracts/Webboard.Contracts.csproj" />
         <Project Path="src/WebBoard.Agent/WebBoard.Agent.csproj" />
         <Project Path="src/Webboard.Domain.Model/Webboard.Domain.Model.csproj" />
         <Project Path="src/Webboard.Domain.Test/Webboard.Domain.Test.csproj" />

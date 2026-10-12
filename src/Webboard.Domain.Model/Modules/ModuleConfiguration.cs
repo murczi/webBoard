@@ -1,5 +1,7 @@
 namespace Webboard.Domain.Model.Modules;
 
+using Contracts;
+
 public static class WebUrl {
     public static string? NormalizeOptional(string? value, string label) {
         if (string.IsNullOrWhiteSpace(value)) return null;

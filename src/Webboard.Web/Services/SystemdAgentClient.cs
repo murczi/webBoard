@@ -2,6 +2,7 @@ namespace Webboard.Web.Services;
 
 using System.Net.Http.Json;
 using System.Text.Json;
+using Webboard.Contracts;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
 using Domain.Model.Hosts;
@@ -25,7 +26,8 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
                 null,
                 response.StatusCode);
         }
-        return await AgentResponseReader.ReadAsync<List<SystemdServiceModel>>(response, cancellationToken);
+        var services = await AgentResponseReader.ReadAsync<List<SystemdServiceDto>>(response, cancellationToken);
+        return services.Select(x => new SystemdServiceModel(x.Name, x.Description, x.LoadState, x.ActiveState, x.SubState)).ToArray();
     }
 
     public async Task<ModuleHealthResult> CheckServiceAsync(
@@ -54,8 +56,8 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
                     ModuleHealthState.Unhealthy, null,
                     AgentHealthFeedback.ResponseFailure(response.StatusCode, "systemd"));
 
-            var status = await AgentResponseReader.ReadAsync<SystemdServiceStatus>(response, cancellationToken);
-            return status is null || status.IsHealthy is null || string.IsNullOrWhiteSpace(status.Message)
+            var status = await AgentResponseReader.ReadAsync<SystemdServiceStatusDto>(response, cancellationToken);
+            return status is null || string.IsNullOrWhiteSpace(status.Message)
                 ? new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response")
                 : new ModuleHealthResult(
                     status.IsHealthy == true ? ModuleHealthState.Healthy : ModuleHealthState.Unhealthy,
@@ -78,6 +80,6 @@ public sealed class SystemdAgentClient(HttpClient httpClient) : ISystemdAgentCli
 
     private static Uri CreateEndpoint(string agentBaseUrl, string relativePath) => AgentEndpoint.Create(agentBaseUrl).For(relativePath);
 
-    private sealed record SystemdServiceStatus(bool? IsHealthy, string? Message);
+
     private sealed record AgentProblem(string? Detail);
 }
