@@ -29,7 +29,7 @@ public sealed class OperationsPageTests {
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
         var response = await client.GetAsync(page);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var html = await response.Content.ReadAsStringAsync();
+        var html = await response.Content.ReadAsStringAsync() + await client.GetStringAsync("/Operations?handler=Capabilities&moduleId=1");
         Assert.Contains("class=\"dropdown module-operations\"", html);
         Assert.DoesNotContain("href=\"/Operations", html);
         Assert.Contains($">{startLabel}</button>", html);
@@ -65,12 +65,22 @@ public sealed class OperationsPageTests {
     }
 
     [Fact]
+    public async Task DashboardRenderingDoesNotQueryTheAgent() {
+        var operations = new Operations(["restart"]);
+        await using var factory = Factory("Docker").WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddSingleton<IModuleOperations>(operations)));
+        using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
+        await client.GetStringAsync("/"); Assert.Equal(0, operations.CapabilityCalls);
+        await client.GetStringAsync("/Operations?handler=Capabilities&moduleId=1"); Assert.Equal(1, operations.CapabilityCalls);
+    }
+
+    [Fact]
     public async Task UnavailableCapabilitiesShowNoButtons() {
         await using var factory = Factory("Docker", allowed: []);
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
         var html = await client.GetStringAsync("/");
-        Assert.DoesNotContain("class=\"dropdown module-operations\"", html);
+        Assert.Contains("class=\"dropdown module-operations\"", html);
         Assert.DoesNotContain("class=\"operation-form\"", html);
+        Assert.Contains("No operations are available", await client.GetStringAsync("/Operations?handler=Capabilities&moduleId=1"));
     }
 
     [Theory]
@@ -88,7 +98,7 @@ public sealed class OperationsPageTests {
     public async Task OnlyAdvertisedCapabilitiesAreShown() {
         await using var factory = Factory("Systemd", allowed: ["restart"]);
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
-        var html = await client.GetStringAsync("/");
+        var html = await client.GetStringAsync("/Operations?handler=Capabilities&moduleId=1");
         Assert.Contains(">Restart</button>", html);
         Assert.DoesNotContain(">Start</button>", html);
         Assert.DoesNotContain(">Stop</button>", html);
@@ -112,7 +122,7 @@ public sealed class OperationsPageTests {
         await using var factory = Factory("Systemd");
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Create,
             ModuleAccess.Update, ModuleAccess.Delete, ModuleAccess.Operations, "AuditLogs:read");
-        var html = await client.GetStringAsync(page);
+        var html = await client.GetStringAsync(page) + await client.GetStringAsync("/Operations?handler=Capabilities&moduleId=1");
         Assert.Contains("class=\"dropdown module-operations\"", html);
         Assert.Contains("flex-wrap", html);
         Assert.Contains(">Restart</button>", html);
@@ -162,7 +172,8 @@ public sealed class OperationsPageTests {
         public Task<HistorySlice> HistoryAsync(int moduleId, DateTimeOffset from, DateTimeOffset until, CancellationToken token) => throw new NotSupportedException();
     }
     private sealed class Operations(string[] allowed) : IModuleOperations {
-        public Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) => Task.FromResult<IReadOnlyList<string>>(allowed);
+        public int CapabilityCalls;
+        public Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) { CapabilityCalls++; return Task.FromResult<IReadOnlyList<string>>(allowed); }
         public Task<ModuleOperationResult> ExecuteAsync(int actorId, ModuleOperationRequest request, CancellationToken token) => throw new NotSupportedException();
     }
     private sealed class Modules(ModuleModel module) : IModuleManagementService {

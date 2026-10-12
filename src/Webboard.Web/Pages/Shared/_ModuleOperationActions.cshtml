@@ -1,0 +1,20 @@
+@model Webboard.Web.Pages.OperationsModel.ActionsModel
+@{ var available = new[] { "start", "stop", "restart", "enable", "disable" }.Where(operation => Model.Allowed.Contains(operation)
+    && !(Model.Module.TypeName == "Docker" && operation is "enable" or "disable")).ToList(); }
+@if (available.Count == 0) { <li><span class="dropdown-item-text text-muted small">No operations are available.</span></li> }
+            @foreach (var operation in available) {
+                var label = operation switch {
+                    "start" => Model.Module.TypeName == "Docker" ? "Up" : "Start",
+                    "stop" => Model.Module.TypeName == "Docker" ? "Down" : "Stop",
+                    "restart" => "Restart", "enable" => "Enable", _ => "Disable"
+                };
+                <li>
+                    <form method="post" asp-page="/Operations" asp-page-handler="Execute" class="operation-form"
+                          data-confirm="@label @Model.Module.Name on @Model.Module.HostName?">
+                        <input type="hidden" name="moduleId" value="@Model.Module.Id" />
+                        <input type="hidden" name="operation" value="@operation" />
+                        <input type="hidden" name="requestId" value="@Guid.NewGuid()" />
+                        <button type="submit" class="dropdown-item">@label</button>
+                    </form>
+                </li>
+            }
