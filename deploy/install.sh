@@ -773,6 +773,7 @@ COMPOSE
     fi
     printf '    restart: unless-stopped\n    environment:\n' >> compose.yaml
     env_field ASPNETCORE_ENVIRONMENT Production >> compose.yaml
+    env_field ReverseProxy__KnownNetworks__0 "$agent_subnet" >> compose.yaml
     env_field ConnectionStrings__WebboardDatabase "$connection_string" >> compose.yaml
     env_field Authentication__Jwt__SigningKey "$signing_key" >> compose.yaml
     env_field Monitoring__IntervalSeconds 30 >> compose.yaml

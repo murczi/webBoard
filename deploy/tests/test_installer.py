@@ -385,6 +385,7 @@ class InstallerTests(unittest.TestCase):
         self.assert_ok(result)
         self.assertEqual(self.config()['services']['proxy']['ports'][0]['published'], '8443')
         self.assertIn('tls internal', (self.deploy / 'Caddyfile').read_text())
+        self.assertEqual(self.config()['services']['ui']['environment']['ReverseProxy__KnownNetworks__0'], '172.30.0.0/16')
         self.assertTrue((self.deploy / 'browser-ca.crt').exists())
 
     def test_lan_bind_defaults_caddy_site_and_browser_url_to_ip(self):

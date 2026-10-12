@@ -65,7 +65,7 @@ public class IndexModel(
         Response.Cookies.Append(
             JwtOptions.CookieName,
             token,
-            sessions.CreateCookieOptions(rememberMe, Request.IsHttps));
+            sessions.CreateCookieOptions(rememberMe, SessionCookiePolicy.RequiresSecure(HttpContext)));
         TempData["StatusMessage"] = "Access refreshed.";
         return RedirectToPage();
     }

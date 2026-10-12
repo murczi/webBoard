@@ -147,9 +147,14 @@ builder.Services.AddAuthorization(options => {
         policy.RequireClaim(JwtSessionService.AccessClaimType, UserAccess.Read));
 });
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    Webboard.Web.Security.ReverseProxySecurity.Configure(options, builder.Configuration));
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
+
+// Restore the original scheme only from configured trusted proxies.
+app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment()){
