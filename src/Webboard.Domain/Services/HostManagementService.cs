@@ -22,7 +22,7 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
         if (await repository.NameExistsAsync(host.Name, cancellationToken: cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
-        await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
+        if (host.IsEnabled) await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
         host.DateCreated = DateTime.UtcNow;
         await repository.AddAsync(host, actorId, auditComment, cancellationToken);
         return host;
@@ -38,7 +38,10 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
         if (await repository.NameExistsAsync(host.Name, host.Id, cancellationToken))
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
-        await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
+        var current = (await repository.GetAllAsync(cancellationToken)).SingleOrDefault(x => x.Id == host.Id);
+        if (current is null) return false;
+        if (host.IsEnabled && (!current.IsEnabled || current.AgentBaseUrl != host.AgentBaseUrl))
+            await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
         return await repository.UpdateAsync(host, actorId, auditComment, cancellationToken);
     }
 
