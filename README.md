@@ -326,3 +326,6 @@ Set `WEBBOARD_BROWSER_APP` to the published Webboard.Web.dll and
 `webboard_browser`, then run `npm test --prefix tests/browser`. The test server migrates
 that database and runs a local HTTPS proxy on loopback; the suite creates accounts
 and modules and changes their permissions. CI supplies an isolated database.
+# Configuration precedence
+
+Both application startup and design-time EF commands preserve environment variables already supplied by the shell or container. A discovered `.env` file supplies only missing values. Run migration commands with an explicit `ConnectionStrings__WebboardDatabase` when targeting a particular database.
