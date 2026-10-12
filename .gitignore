@@ -151,3 +151,8 @@ http-client.private.env.json
 *.key
 **/agent.env
 **/appsettings.Production.json
+
+# Browser test dependencies and reports
+**/node_modules/
+**/test-results/
+**/playwright-report/

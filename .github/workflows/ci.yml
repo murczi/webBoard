@@ -11,12 +11,13 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:18.4-alpine
         env:
           POSTGRES_PASSWORD: webboard-ci-only
+          POSTGRES_DB: webboard_browser
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres"
@@ -33,6 +34,23 @@ jobs:
       - run: dotnet restore Webboard.slnx
       - run: dotnet build Webboard.slnx --configuration Release --no-restore
       - run: dotnet test Webboard.slnx --configuration Release --no-build
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node --test tests/js/*.test.cjs
+      - run: python3 -m unittest discover -s deploy/tests -v
+      - run: npm ci --prefix tests/browser
+      - run: npx --prefix tests/browser playwright install --with-deps chromium
+      - run: dotnet publish src/Webboard.Web -c Release --no-restore -o "$RUNNER_TEMP/webboard-browser"
+      - name: Browser functionality through HTTPS proxy
+        env:
+          WEBBOARD_BROWSER_DATABASE: Host=localhost;Port=5432;Database=webboard_browser;Username=postgres;Password=webboard-ci-only
+        run: WEBBOARD_BROWSER_APP="$RUNNER_TEMP/webboard-browser/Webboard.Web.dll" npm test --prefix tests/browser
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-test-results
+          path: tests/browser/test-results
 
   docker:
     if: github.event_name == 'pull_request'

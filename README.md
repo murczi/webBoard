@@ -309,3 +309,20 @@ explain the build/runtime stages, dependency caching, ports, and non-root user.
 Set the corresponding Compose `image` to the `:local` tag and follow the same
 installation procedure, skipping image pulls for locally built images. Development
 settings, `.env` files, and private TLS material are excluded from build contexts.
+
+## Run verification
+
+Run `dotnet build Webboard.slnx -c Release`, then `dotnet test Webboard.slnx -c Release`.
+Set `WEBBOARD_TEST_DATABASE` to an isolated PostgreSQL server to include database
+integration tests; these create and remove their own databases. Run browser logic
+checks with `node --test tests/js/*.test.cjs` and installer checks with
+`python3 -m unittest discover -s deploy/tests -v`. Installer tests mock privileged
+operations; output reports host-dependent skipped cases. CI runs these checks.
+
+For browser flows, publish the UI to a temporary directory, run
+`npm ci --prefix tests/browser` and `npx --prefix tests/browser playwright install chromium`.
+Set `WEBBOARD_BROWSER_APP` to the published Webboard.Web.dll and
+`WEBBOARD_BROWSER_DATABASE` to a **fresh disposable** database whose name begins
+`webboard_browser`, then run `npm test --prefix tests/browser`. The test server migrates
+that database and runs a local HTTPS proxy on loopback; the suite creates accounts
+and modules and changes their permissions. CI supplies an isolated database.
