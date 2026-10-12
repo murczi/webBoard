@@ -1,4 +1,4 @@
-namespace WebBoard.Agent;
+namespace Webboard.Agent;
 
 using System.Net.Sockets;
 using System.Net.Http.Json;
@@ -10,8 +10,7 @@ public sealed class DockerSocketClient : IDisposable {
 
     public DockerSocketClient(IConfiguration configuration) {
         var socketPath = configuration["Docker:SocketPath"] ?? "/var/run/docker.sock";
-        var handler = new SocketsHttpHandler
-        {
+        var handler = new SocketsHttpHandler {
             ConnectCallback = async (_, cancellationToken) => {
                 var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
                 try {
@@ -19,15 +18,13 @@ public sealed class DockerSocketClient : IDisposable {
                     new UnixDomainSocketEndPoint(socketPath),
                     cancellationToken);
                     return new NetworkStream(socket, ownsSocket: true);
-                }
-                catch {
+                } catch {
                     socket.Dispose();
                     throw;
                 }
             }
         };
-        client = new HttpClient(handler)
-        {
+        client = new HttpClient(handler) {
             BaseAddress = new Uri("http://docker"),
             Timeout = Timeout.InfiniteTimeSpan
         };

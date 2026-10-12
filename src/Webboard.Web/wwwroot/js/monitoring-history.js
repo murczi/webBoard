@@ -7,8 +7,9 @@
     const preset = document.getElementById('history-preset');
     const fromInput = document.getElementById('history-from');
     const untilInput = document.getElementById('history-until');
-    const labels = ['Not configured', 'Healthy', 'Unhealthy', 'Unknown / missing'];
-    const colors = ['#a67710', '#18764c', '#b42334', '#737b85'];
+    const states = window.Webboard.HealthStates;
+    const labels = { [states.NotConfigured]: 'Not configured', [states.Healthy]: 'Healthy', [states.Unhealthy]: 'Unhealthy', [states.Unknown]: 'Unknown / missing' };
+    const colors = { [states.NotConfigured]: '#a67710', [states.Healthy]: '#18764c', [states.Unhealthy]: '#b42334', [states.Unknown]: '#737b85' };
     let hidden = new Set();
     let storageMessage = '';
     try { const saved = JSON.parse(localStorage.getItem(key) || '[]'); if (Array.isArray(saved)) hidden = new Set(saved.filter(x => /^\d+$/.test(x))); }
@@ -86,7 +87,7 @@
         const previous = document.createElement('canvas'); previous.width = canvas.width; previous.height = canvas.height;
         previous.getContext('2d').drawImage(canvas, 0, 0);
         canvas.width = width; canvas.height = Math.round(28 * devicePixelRatio);
-        const context = canvas.getContext('2d'); context.fillStyle = colors[3]; context.fillRect(0, 0, width, canvas.height);
+        const context = canvas.getContext('2d'); context.fillStyle = colors[states.Unknown]; context.fillRect(0, 0, width, canvas.height);
         if (row.range && row.loaded) {
             const scale = width / (range[1] - range[0]);
             context.drawImage(previous, (row.range[0] - range[0]) * scale, 0, (row.range[1] - row.range[0]) * scale, canvas.height);
@@ -98,7 +99,7 @@
         for (const block of blocks) {
             const x = (new Date(block.start).getTime() - range[0]) * scale, width = (new Date(block.end) - new Date(block.start)) * scale;
             context.fillStyle = colors[block.state]; context.fillRect(x, 0, width, canvas.height);
-            if (block.state === 3) { context.save(); context.beginPath(); context.rect(x, 0, width, canvas.height); context.clip(); context.strokeStyle = '#626a73'; for (let line = x - canvas.height; line < x + width; line += 8 * devicePixelRatio) { context.beginPath(); context.moveTo(line, canvas.height); context.lineTo(line + canvas.height, 0); context.stroke(); } context.restore(); }
+            if (block.state === states.Unknown) { context.save(); context.beginPath(); context.rect(x, 0, width, canvas.height); context.clip(); context.strokeStyle = '#626a73'; for (let line = x - canvas.height; line < x + width; line += 8 * devicePixelRatio) { context.beginPath(); context.moveTo(line, canvas.height); context.lineTo(line + canvas.height, 0); context.stroke(); } context.restore(); }
         }
     }
     async function load(row, range, signal) {

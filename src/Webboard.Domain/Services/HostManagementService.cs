@@ -4,7 +4,7 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.Hosts;
 
-public class HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker)
+public sealed class HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker)
     : IHostManagementService {
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker, TimeProvider timeProvider) : this(repository, healthChecker) => this.timeProvider = timeProvider;

@@ -20,14 +20,6 @@ public interface IUserCrudAccessRepository {
         int userId,
         CancellationToken cancellationToken = default);
 
-    Task AddAsync(
-        UserCrudAccessModel access,
-        CancellationToken cancellationToken = default);
-
-    void Update(UserCrudAccessModel access);
-
-    void Delete(UserCrudAccessModel access);
-
     void AddAuditLog(int actorId, int userId, string auditComment);
 
     Task<long?> GetPermissionVersionAsync(int userId, CancellationToken cancellationToken);

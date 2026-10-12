@@ -48,8 +48,7 @@ public sealed class NetworkPolicy(IConfiguration configuration) {
                 try {
                     await socket.ConnectAsync(address, context.DnsEndPoint.Port, token);
                     return new NetworkStream(socket, ownsSocket: true);
-                }
-                catch { socket.Dispose(); if (token.IsCancellationRequested) throw; }
+                } catch { socket.Dispose(); if (token.IsCancellationRequested) throw; }
             }
             throw new HttpRequestException("Cannot connect to the configured destination.");
         }
@@ -61,7 +60,7 @@ public sealed class AgentAuthenticationHandler(IConfiguration configuration) : D
         var uri = request.RequestUri ?? throw new HttpRequestException("Missing agent endpoint.");
         var profile = (configuration.GetSection("Agents").Get<AgentConnection[]>() ?? [])
             .SingleOrDefault(candidate => Matches(candidate.BaseUrl, uri));
-        if (profile is null || profile.Token.Length < 32 ||
+        if (profile is null || !AgentToken.IsValid(profile.Token) ||
             uri.Scheme != "https" && !(uri.Scheme == "http" && profile.AllowHttpOverEncryptedTransport))
             throw new HttpRequestException("Agent security profile is missing or invalid.");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.Token);
@@ -75,8 +74,7 @@ public sealed class AgentAuthenticationHandler(IConfiguration configuration) : D
     }
 
     public static bool Matches(string baseUrl, Uri uri) {
-        try { return AgentEndpoint.Create(baseUrl).Contains(uri); }
-        catch (ArgumentException) { return false; }
+        try { return AgentEndpoint.Create(baseUrl).Contains(uri); } catch (ArgumentException) { return false; }
     }
 
 }
@@ -86,10 +84,9 @@ public static class OutboundSecurityValidation {
         var profiles = configuration.GetSection("Agents").Get<AgentConnection[]>() ?? [];
         foreach (var profile in profiles) {
             AgentEndpoint endpoint;
-            try { endpoint = AgentEndpoint.Create(profile.BaseUrl); }
-            catch (ArgumentException exception) { throw new InvalidOperationException("Invalid agent base URL.", exception); }
+            try { endpoint = AgentEndpoint.Create(profile.BaseUrl); } catch (ArgumentException exception) { throw new InvalidOperationException("Invalid agent base URL.", exception); }
             var uri = endpoint.BaseUri;
-            if (profile.Token.Length < 32 || profile.Token.Any(char.IsWhiteSpace) ||
+            if (!AgentToken.IsValid(profile.Token) ||
                 uri.Scheme != "https" && !(uri.Scheme == "http" && profile.AllowHttpOverEncryptedTransport))
                 throw new InvalidOperationException("Agents entries require a valid base URL, a random token, and HTTPS or an explicit encrypted-transport exception.");
             if (profiles.Count(candidate => AgentAuthenticationHandler.Matches(candidate.BaseUrl, endpoint.For("health"))) != 1)

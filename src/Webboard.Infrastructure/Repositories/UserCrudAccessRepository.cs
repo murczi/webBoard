@@ -7,7 +7,7 @@ using Domain.Model.UserCrudAccess;
 using Microsoft.EntityFrameworkCore;
 using Domain.Services;
 
-public class UserCrudAccessRepository(WebboardDbContext dbContext)
+public sealed class UserCrudAccessRepository(WebboardDbContext dbContext)
     : IUserCrudAccessRepository {
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public UserCrudAccessRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
@@ -18,8 +18,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             .AsNoTracking()
             .Where(user => !user.DeletionFlag)
             .OrderBy(user => user.Name)
-            .Select(user => new UserSummaryModel
-            {
+            .Select(user => new UserSummaryModel {
                 Id = user.Id,
                 Name = user.Name
             })
@@ -49,9 +48,12 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             return false;
 
         dbContext.AuditLogs.Add(new AuditLogEntity {
-            ActorId = actorId, UserId = userId, Comment = auditComment,
+            ActorId = actorId,
+            UserId = userId,
+            Comment = auditComment,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Delete,
-            DateCreated = timeProvider.GetUtcNow(), Actor = null!
+            DateCreated = timeProvider.GetUtcNow(),
+            Actor = null!
         });
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -65,33 +67,21 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             .AsNoTracking()
             .Where(access => access.UserId == userId)
             .OrderBy(access => access.Resource)
-            .Select(access => new UserCrudAccessModel
-            {
-                Id = access.Id, PermissionVersion = access.User.PermissionVersion,
+            .Select(access => new UserCrudAccessModel {
+                Id = access.Id,
+                PermissionVersion = access.User.PermissionVersion,
                 UserId = access.UserId,
                 Resource = access.Resource,
                 CanOperate = access.CanOperate,
-        CanCreate = access.CanCreate,
+                CanCreate = access.CanCreate,
                 CanRead = access.CanRead,
                 CanUpdate = access.CanUpdate,
                 CanDelete = access.CanDelete
             })
             .ToListAsync(cancellationToken);
 
-    public async Task AddAsync(
-        UserCrudAccessModel access,
-        CancellationToken cancellationToken = default) =>
-        await dbContext.UserCrudAccess.AddAsync(ToEntity(access), cancellationToken);
-
-    public void Update(UserCrudAccessModel access) =>
-        dbContext.UserCrudAccess.Update(ToEntity(access));
-
-    public void Delete(UserCrudAccessModel access) =>
-        dbContext.UserCrudAccess.Remove(ToEntity(access));
-
     public void AddAuditLog(int actorId, int userId, string auditComment) =>
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.PermissionsChanged,
             Comment = auditComment,
@@ -121,8 +111,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         await dbContext.SaveChangesAsync(cancellationToken);
 
-    private static UserCrudAccessEntity ToEntity(UserCrudAccessModel access) => new()
-    {
+    private static UserCrudAccessEntity ToEntity(UserCrudAccessModel access) => new() {
         Id = access.Id,
         UserId = access.UserId,
         Resource = access.Resource,

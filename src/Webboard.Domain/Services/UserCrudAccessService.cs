@@ -4,7 +4,7 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.UserCrudAccess;
 
-public class UserCrudAccessService(IUserCrudAccessRepository repository)
+public sealed class UserCrudAccessService(IUserCrudAccessRepository repository)
     : IUserCrudAccessService {
     private static readonly IReadOnlyDictionary<string, bool> Resources = PermissionResources.All
         .ToDictionary(x => x.Key, x => x.IsReadOnly, StringComparer.Ordinal);
@@ -44,9 +44,9 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
                 return access;
             }
 
-            return new UserCrudAccessModel
-            {
-                UserId = userId, PermissionVersion = version,
+            return new UserCrudAccessModel {
+                UserId = userId,
+                PermissionVersion = version,
                 Resource = resource.Key,
                 IsReadOnlyResource = resource.Value
             };

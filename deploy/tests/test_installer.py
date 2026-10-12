@@ -474,6 +474,12 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(any('buildx' in call or '--migrate' in call for call in self.calls()))
 
     @unittest.skipUnless(Path('/var/run/docker.sock').is_socket(), 'Host Docker socket needed')
+    def test_existing_unicode_token_uses_utf8_bytes(self):
+        token = 'é' * 16
+        self.assert_ok(self.run_installer(self.answers('ui,agent', token=token)))
+        cfg = self.config()
+        self.assertEqual(cfg['services']['agent']['environment']['Security__Tokens__0'], token)
+
     def test_existing_agent_token_is_preserved(self):
         token = 'existing' + 'a' * 64
         self.assert_ok(self.run_installer(self.answers('ui,agent', token=token)))

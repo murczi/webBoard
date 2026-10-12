@@ -1,6 +1,6 @@
 namespace Webboard.Domain.Model.AuditLogs;
 
-public enum AuditAction { Legacy, Create, Update, Delete, PermissionsChanged, ServiceControl, CommandExecution }
+public enum AuditAction { Legacy = 0, Create = 1, Update = 2, Delete = 3, PermissionsChanged = 4, ServiceControl = 5, CommandExecution = 6 }
 
 public sealed record AuditLogQuery {
     public string? Resource { get; init; }

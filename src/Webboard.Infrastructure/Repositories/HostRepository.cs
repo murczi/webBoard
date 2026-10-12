@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Domain.Services;
 
-public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
+public sealed class HostRepository(WebboardDbContext dbContext) : IHostRepository {
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public HostRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
 
@@ -16,9 +16,10 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         await dbContext.Hosts.AsNoTracking()
             .Where(host => !host.DeletionFlag)
             .OrderBy(host => host.Name)
-            .Select(host => new HostModel
-            {
-                Id = host.Id, Version = host.Version, DateUpdated = host.DateUpdated,
+            .Select(host => new HostModel {
+                Id = host.Id,
+                Version = host.Version,
+                DateUpdated = host.DateUpdated,
                 Name = host.Name,
                 AgentBaseUrl = host.AgentBaseUrl,
                 IsEnabled = host.IsEnabled,
@@ -39,17 +40,16 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         int actorId,
         string auditComment,
         CancellationToken cancellationToken = default) {
-        var entity = new HostEntity
-        {
+        var entity = new HostEntity {
             Name = host.Name,
             AgentBaseUrl = host.AgentBaseUrl,
             IsEnabled = host.IsEnabled,
             DeletionFlag = false,
-            DateCreated = host.DateCreated, DateUpdated = host.DateUpdated == default ? host.DateCreated : host.DateUpdated
+            DateCreated = host.DateCreated,
+            DateUpdated = host.DateUpdated == default ? host.DateCreated : host.DateUpdated
         };
         dbContext.Hosts.Add(entity);
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
@@ -130,19 +130,17 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
     }
 
     private static async Task<T> TranslateNameConflictAsync<T>(Func<Task<T>> action) {
-        try { return await action(); }
-        catch (DbUpdateException exception) when (exception.InnerException is PostgresException {
-            SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Hosts_NormalizedName" }) {
+        try { return await action(); } catch (DbUpdateException exception) when (exception.InnerException is PostgresException {
+            SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Hosts_NormalizedName"
+        }) {
             throw new ArgumentException("A host with this name already exists.", exception);
-        }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation && exception.ConstraintName == "IX_Hosts_NormalizedName") {
+        } catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation && exception.ConstraintName == "IX_Hosts_NormalizedName") {
             throw new ArgumentException("A host with this name already exists.", exception);
         }
     }
 
     private void AddAuditLog(int hostId, int actorId, string comment, Webboard.Domain.Model.AuditLogs.AuditAction action) =>
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId,
             Action = action,
             Comment = comment,

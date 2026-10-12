@@ -7,7 +7,7 @@ using Domain.Model.Modules;
 using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
-public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
+public sealed class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
     private static readonly string[] SupportedTypeNames = ModuleTypes.All.Select(x => x.Name.ToLowerInvariant()).ToArray();
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public ModuleRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
@@ -49,8 +49,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         CancellationToken cancellationToken = default) {
         var entity = ModuleProjection.ToEntity(module);
         dbContext.Modules.Add(entity);
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
@@ -136,8 +135,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
     }
 
     private void AddAuditLog(int moduleId, int actorId, string comment, Webboard.Domain.Model.AuditLogs.AuditAction action) =>
-        dbContext.AuditLogs.Add(new AuditLogEntity
-        {
+        dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId,
             Action = action,
             Comment = comment,

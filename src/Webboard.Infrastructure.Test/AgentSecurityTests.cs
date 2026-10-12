@@ -1,22 +1,37 @@
 namespace Webboard.Infrastructure.Test;
+
 using System.Net;
 using Webboard.Contracts;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Agent;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using WebBoard.Agent;
 using Web.Security;
 public sealed class AgentSecurityTests {
     private const string Token = "test-agent-secret-0123456789abcdef0123456789";
+    [Theory]
+    [InlineData("éééééééééééééééé", true)]
+    [InlineData("ééééééééééééééé", false)]
+    [InlineData("abcdefghijklmnopqrstuvwxyz012345 ", false)]
+    [InlineData("abcdefghijklmnopqrstuvwxyz012345\u00a0", false)]
+    public void AgentAndUiAgreeOnUtf8TokenValidation(string token, bool expected) {
+        var agent = Config(new() { ["Security:Tokens:0"] = token });
+        var ui = Config(new() { ["Agents:0:BaseUrl"] = "https://agent.test", ["Agents:0:Token"] = token });
+        Assert.Equal(expected, AgentToken.IsValid(token));
+        if (expected) { _ = new AgentSecurity(agent); OutboundSecurityValidation.Validate(ui); } else { Assert.Throws<InvalidOperationException>(() => new AgentSecurity(agent)); Assert.Throws<InvalidOperationException>(() => OutboundSecurityValidation.Validate(ui)); }
+    }
+
     [Fact]
     public void MissingOrWeakKeysFailClosed() {
         Assert.Throws<InvalidOperationException>(() => new AgentSecurity(Config([])));
         Assert.Throws<InvalidOperationException>(() => new AgentSecurity(Config(new() { ["Security:Tokens:0"] = "short" })));
     }
     [Theory]
-    [InlineData("", false)] [InlineData("Bearer wrong", false)] [InlineData("Basic ignored", false)]
+    [InlineData("", false)]
+    [InlineData("Bearer wrong", false)]
+    [InlineData("Basic ignored", false)]
     [InlineData("Bearer " + Token, true)]
     public void CredentialValidation(string header, bool expected) =>
         Assert.Equal(expected, new AgentSecurity(Config(new() { ["Security:Tokens:0"] = Token })).Authenticate(header));
@@ -38,7 +53,9 @@ public sealed class AgentSecurityTests {
         Assert.Equal(HttpStatusCode.BadRequest, extra.StatusCode);
     }
     [Theory]
-    [InlineData(null, 200)] [InlineData("1", 200)] [InlineData("2", 400)]
+    [InlineData(null, 200)]
+    [InlineData("1", 200)]
+    [InlineData("2", 400)]
     public async Task AgentKeepsLegacyRequestsCompatibleAndRejectsUnknownVersions(string? version, int status) {
         await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Testing").ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["Security:Tokens:0"] = Token })));
@@ -52,7 +69,9 @@ public sealed class AgentSecurityTests {
         }
     }
     [Theory]
-    [InlineData(null, true)] [InlineData("1", true)] [InlineData("2", false)]
+    [InlineData(null, true)]
+    [InlineData("1", true)]
+    [InlineData("2", false)]
     public async Task ClientAcceptsLegacyAndCurrentResponsesButRejectsUnknownVersions(string? version, bool accepted) {
         var config = Config(new() { ["Agents:0:BaseUrl"] = "https://agent.test", ["Agents:0:Token"] = Token });
         using var handler = new AgentAuthenticationHandler(config) { InnerHandler = new VersionHandler(version) };
@@ -73,7 +92,9 @@ public sealed class AgentSecurityTests {
     public async Task CapabilityDiscoveryReturnsAllOperationsOnlyForAllowedTargets() {
         await using var factory = new WebApplicationFactory<AgentSecurity>().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Testing").ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> {
-                ["Security:Tokens:0"] = Token, ["Controls:Systemd:0"] = "example.service", ["Controls:Systemd:1"] = "second.service"
+                ["Security:Tokens:0"] = Token,
+                ["Controls:Systemd:0"] = "example.service",
+                ["Controls:Systemd:1"] = "second.service"
             })));
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
@@ -85,8 +106,12 @@ public sealed class AgentSecurityTests {
         Assert.Empty((await client.GetFromJsonAsync<string[]>("/capabilities?kind=Command&target=example.service"))!);
     }
     [Theory]
-    [InlineData("127.0.0.1", false)] [InlineData("10.0.0.1", true)] [InlineData("169.254.169.254", false)]
-    [InlineData("::ffff:169.254.169.254", false)] [InlineData("::1", false)] [InlineData("224.0.0.1", false)]
+    [InlineData("127.0.0.1", false)]
+    [InlineData("10.0.0.1", true)]
+    [InlineData("169.254.169.254", false)]
+    [InlineData("::ffff:169.254.169.254", false)]
+    [InlineData("::1", false)]
+    [InlineData("224.0.0.1", false)]
     public void NetworkPolicyAppliesToResolvedAddresses(string ip, bool allowed) {
         var policy = new NetworkPolicy(Config(new() { ["Outbound:AllowedPrivateNetworks:0"] = "10.0.0.0/8" }));
         Assert.Equal(allowed, policy.IsAllowed(IPAddress.Parse(ip)));
@@ -112,8 +137,12 @@ public sealed class AgentSecurityTests {
     }
     [Fact]
     public async Task AgentCredentialsAreBoundToTheirProfileAndHttpRequiresExplicitOptIn() {
-        var config = Config(new() { ["Agents:0:BaseUrl"] = "https://first.test/agent", ["Agents:0:Token"] = Token,
-            ["Agents:1:BaseUrl"] = "https://second.test", ["Agents:1:Token"] = Token + "-second" });
+        var config = Config(new() {
+            ["Agents:0:BaseUrl"] = "https://first.test/agent",
+            ["Agents:0:Token"] = Token,
+            ["Agents:1:BaseUrl"] = "https://second.test",
+            ["Agents:1:Token"] = Token + "-second"
+        });
         var captured = new CaptureHandler();
         using var handler = new AgentAuthenticationHandler(config) { InnerHandler = captured };
         using var client = new HttpClient(handler);

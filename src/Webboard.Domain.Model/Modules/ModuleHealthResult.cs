@@ -1,10 +1,10 @@
 namespace Webboard.Domain.Model.Modules;
 
 public enum ModuleHealthState {
-    NotConfigured,
-    Healthy,
-    Unhealthy,
-    Unknown
+    NotConfigured = 0,
+    Healthy = 1,
+    Unhealthy = 2,
+    Unknown = 3
 }
 
 public sealed record ModuleHealthResult(

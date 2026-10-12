@@ -1,6 +1,7 @@
 (() => {
     const grid = document.querySelector('[data-module-grid]');
     if (!grid) return;
+    const states = window.Webboard.HealthStates;
     let active = false;
     const feedback = document.getElementById('dashboard-refresh-status');
     async function refresh() {
@@ -22,7 +23,7 @@
                 card.querySelector('[data-steam-details]').hidden = !steam;
                 if (steam) card.querySelector('[data-steam-info]').textContent = `${steam.game} · ${steam.version}\n${steam.name} · ${steam.map}\n${steam.players}/${steam.maxPlayers} players` +
                     (steam.playerDetails ? '\n' + steam.playerDetails.map(player => `${player.name}: ${player.score} (${Math.floor(player.durationSeconds / 60)} minutes)`).join('\n') : '');
-                card.querySelector('.module-health-dot').className = 'module-health-dot module-health-dot--' + (status.health.state === 1 ? 'healthy' : status.health.state === 2 ? 'unhealthy' : 'unknown');
+                card.querySelector('.module-health-dot').className = 'module-health-dot module-health-dot--' + (status.health.state === states.Healthy ? 'healthy' : status.health.state === states.Unhealthy ? 'unhealthy' : 'unknown');
             }
             if (!statuses.some(status => !grid.querySelector(`[data-module-id="${status.moduleId}"]`))) feedback.textContent = '';
         } catch { feedback.textContent = 'Status refresh is unavailable. Displayed observations may be stale.'; }

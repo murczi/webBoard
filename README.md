@@ -333,3 +333,5 @@ Both application startup and design-time EF commands preserve environment variab
 Deployments beneath a URL prefix can set `Application__PathBase=/board`. The proxy must preserve that prefix when forwarding requests. Links, authentication redirects, forms, dashboard refresh, history requests, and static assets use that base. Run the browser suite with `WEBBOARD_BROWSER_PATH_BASE=/board` against a fresh disposable database to verify this deployment mode.
 
 The UI and agent share `Webboard.Contracts` for operation outcomes, health, Docker/systemd discovery, and unit-name validation. Agent protocol version 1 retains the original JSON fields; the optional `X-Webboard-Agent-Protocol` header negotiates compatibility. Missing headers remain supported for older releases; unsupported explicit versions fail before execution. Upgrade both components for new protocol versions. Domain operation commands and discovery view models remain separate from wire payloads.
+
+The [baseline codebase audit](CODEBASE_AUDIT.md) and [implementation record](AUDIT_IMPLEMENTATION.md) document the 35 separately committed fixes, architecture changes, and verification scope.

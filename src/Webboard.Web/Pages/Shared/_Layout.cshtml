@@ -53,6 +53,7 @@
 <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 <script src="~/js/searchable-select.js" asp-append-version="true"></script>
 <script src="~/js/request-lifecycle.js" asp-append-version="true"></script>
+<script type="application/json" id="health-state-values">@Json.Serialize(Enum.GetValues<Webboard.Domain.Model.Modules.ModuleHealthState>().ToDictionary(state => state.ToString(), state => (int)state))</script>
 <script src="~/js/site.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

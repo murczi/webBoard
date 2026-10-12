@@ -4,7 +4,7 @@ using Interfaces.Repositories;
 using Interfaces.Services;
 using Model.Modules;
 
-public class ModuleManagementService(IModuleRepository repository) : IModuleManagementService {
+public sealed class ModuleManagementService(IModuleRepository repository) : IModuleManagementService {
     private readonly ModuleConfigurationRegistry configurations = new();
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public ModuleManagementService(IModuleRepository repository, ModuleConfigurationRegistry configurations, TimeProvider timeProvider) : this(repository, configurations) => this.timeProvider = timeProvider;

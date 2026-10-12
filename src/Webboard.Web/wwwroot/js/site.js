@@ -1,3 +1,5 @@
+window.Webboard = window.Webboard || {};
+window.Webboard.HealthStates = JSON.parse(document.getElementById('health-state-values').textContent);
 document.querySelectorAll('form[data-confirm-delete]').forEach(form => {
     form.addEventListener('submit', event => {
         if (!confirm('Delete “' + form.dataset.confirmDelete + '”? This item will be removed from Webboard.')) event.preventDefault();

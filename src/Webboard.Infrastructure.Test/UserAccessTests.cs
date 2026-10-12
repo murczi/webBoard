@@ -109,8 +109,15 @@ public sealed class UserAccessTests : IAsyncLifetime {
     [PostgresFact]
     public async Task SteamDowngradeArchivesConfigurationAndDisablesDependentModules() {
         await using var db = Context();
-        db.Modules.Add(new() { FriendlyName = "Steam", TypeId = 5, SteamServerAddress = "steam.test", SteamQueryPort = 27015,
-            IsEnabled = true, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow });
+        db.Modules.Add(new() {
+            FriendlyName = "Steam",
+            TypeId = 5,
+            SteamServerAddress = "steam.test",
+            SteamQueryPort = 27015,
+            IsEnabled = true,
+            DateCreated = DateTimeOffset.UtcNow,
+            DateUpdated = DateTimeOffset.UtcNow
+        });
         await db.SaveChangesAsync();
         await db.GetService<IMigrator>().MigrateAsync("20260929103515_AddModuleOperationsAndPermissions");
         Assert.Equal(1, await db.Database.SqlQueryRaw<int>("SELECT \"TypeId\" AS \"Value\" FROM \"Modules\"").SingleAsync());
@@ -153,18 +160,32 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var timestamp = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
         for (var i = 0; i < 31; i++)
             db.AuditLogs.Add(new AuditLogEntity {
-                ActorId = actor, HostId = host.Id, Actor = null!, Comment = $"change {i}",
-                DateCreated = timestamp, Action = AuditAction.Update
+                ActorId = actor,
+                HostId = host.Id,
+                Actor = null!,
+                Comment = $"change {i}",
+                DateCreated = timestamp,
+                Action = AuditAction.Update
             });
         db.AuditLogs.Add(new AuditLogEntity {
-            ActorId = otherActor, UserId = actor, Actor = null!, Comment = "permission event",
-            DateCreated = timestamp.AddDays(1), Action = AuditAction.PermissionsChanged
+            ActorId = otherActor,
+            UserId = actor,
+            Actor = null!,
+            Comment = "permission event",
+            DateCreated = timestamp.AddDays(1),
+            Action = AuditAction.PermissionsChanged
         });
         await db.SaveChangesAsync();
         await db.Users.Where(u => u.Id == actor).ExecuteUpdateAsync(u => u.SetProperty(x => x.DeletionFlag, true));
         var service = new AuditLogService(new AuditLogRepository(db));
-        var query = new AuditLogQuery { Resource = "Hosts", Action = AuditAction.Update, ActorId = actor, TargetId = host.Id,
-            FromUtc = timestamp.Date, UntilUtc = timestamp.Date.AddDays(1) };
+        var query = new AuditLogQuery {
+            Resource = "Hosts",
+            Action = AuditAction.Update,
+            ActorId = actor,
+            TargetId = host.Id,
+            FromUtc = timestamp.Date,
+            UntilUtc = timestamp.Date.AddDays(1)
+        };
         var first = await service.SearchAsync(query);
         var second = await service.SearchAsync(query with { Page = 2 });
         Assert.Equal(31, first.TotalItems);
@@ -200,6 +221,18 @@ public sealed class UserAccessTests : IAsyncLifetime {
         var result = await new AuditLogService(new AuditLogRepository(db)).SearchAsync(new AuditLogQuery { Action = AuditAction.Legacy });
         Assert.Equal(2, result.Items.Count);
         Assert.All(result.Items, item => Assert.Equal(AuditAction.Legacy, item.Action));
+    }
+
+    [PostgresFact]
+    public async Task UserLookupAndUniquenessDoNotDependOnCurrentCulture() {
+        var id = await Register("ADMIN");
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        try {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+            await using var db = Context(); var users = new UserAuthenticationRepository(db);
+            Assert.Equal(id, (await users.FindByNameAsync("ADMIN"))!.Id);
+            Assert.True(await users.UserNameExistsAsync("ADMIN"));
+        } finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
     }
 
     [PostgresFact]
