@@ -138,3 +138,14 @@ than restoring over live application tables.
 - **UI cannot connect:** check the private address, firewall, database health, and matching credentials. `localhost` inside the UI container cannot reach this host.
 - **Password changes have no effect:** the initialization variables apply only to an empty volume; change an existing role's password in PostgreSQL and update the UI connection string together.
 - **Data appears missing after moving the file:** check the Compose project name and existing volumes with `docker volume ls` before creating a fresh database.
+
+## Upgrade from the initial historical schema
+
+Back up the database and stop UI replicas. Use the corrected UI image's `--migrate`
+command: pending historical migrations now backfill module types and preserve audit
+actor IDs before adding foreign keys. Already-applied migrations keep their IDs and
+are not rerun. A failed transactional migration can be retried with this image; do
+not mark it applied manually. Legacy actors become deleted, non-login archival users
+named `__legacy_actor_<id>`; null actors use archival ID 0. The first real registration
+still receives administrator grants. Existing real users, including deleted users,
+continue to prevent a second bootstrap. Validate against a restored backup first.

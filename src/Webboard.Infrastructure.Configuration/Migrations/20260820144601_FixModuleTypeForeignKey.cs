@@ -28,8 +28,13 @@ namespace Webboard.Infrastructure.Configuration.Migrations
                 name: "ModuleTypeId",
                 table: "Modules",
                 type: "integer",
-                nullable: false,
-                defaultValue: 0);
+                nullable: true);
+
+            // The initial FK used Modules.Id as the type reference. Preserve it.
+            migrationBuilder.Sql("UPDATE \"Modules\" SET \"ModuleTypeId\" = \"Id\"");
+            migrationBuilder.AlterColumn<int>(name: "ModuleTypeId", table: "Modules", type: "integer",
+                nullable: false, oldClrType: typeof(int), oldType: "integer", oldNullable: true);
+            migrationBuilder.Sql("SELECT setval(pg_get_serial_sequence('\"Modules\"', 'Id'), GREATEST(COALESCE(MAX(\"Id\"), 0), 1), COALESCE(MAX(\"Id\"), 0) > 0) FROM \"Modules\"");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Modules_ModuleTypeId",

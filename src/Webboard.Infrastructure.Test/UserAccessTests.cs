@@ -52,6 +52,29 @@ public sealed class UserAccessTests : IAsyncLifetime {
 
 
     [PostgresFact]
+    public async Task PopulatedInitialSchemaPreservesModulesActorsAndAdministratorBootstrap() {
+        await using var db = Context();
+        await db.GetService<IMigrator>().MigrateAsync("20260711191703_Initial");
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "AuditLogs" ALTER COLUMN "ActorUserId" DROP NOT NULL;
+            INSERT INTO "Modules" ("Id", "Name", "IsEnabled", "SortOrder", "CreatedAtUtc", "UpdatedAtUtc")
+            VALUES (1, 'legacy', true, 0, now(), now());
+            INSERT INTO "AuditLogs" ("ModuleId", "ActorUserId", "AuditComment", "DateCreated")
+            VALUES (1, 42, 'Historical change', now()), (1, NULL, 'System event', now());
+            """);
+        await db.Database.MigrateAsync();
+        Assert.Equal(1, (await db.Modules.SingleAsync()).TypeId);
+        Assert.Equal(new[] { 0, 42 }, await db.AuditLogs.OrderBy(x => x.ActorId).Select(x => x.ActorId).ToArrayAsync());
+        Assert.All(await db.Users.ToListAsync(), user => Assert.True(user.DeletionFlag));
+        Assert.True(await new UserAuthenticationRepository(db).CreateAsync("real-admin", "unused"));
+        Assert.Equal(6, await db.UserCrudAccess.CountAsync());
+        Assert.True((await db.Users.SingleAsync(x => x.Name == "real-admin")).Id > 42);
+        db.Modules.Add(new() { FriendlyName = "next", TypeId = 1, DateCreated = DateTimeOffset.UtcNow, DateUpdated = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.Modules.CountAsync());
+    }
+
+    [PostgresFact]
     public async Task AuditSearchFiltersBeforePagingAndIncludesDeletedHistory() {
         var actor = await Register("audit-actor");
         var otherActor = await Register("other-actor");
