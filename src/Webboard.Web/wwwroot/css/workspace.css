@@ -120,3 +120,9 @@ a { text-underline-offset:3px; }
 @media(prefers-reduced-motion:reduce) {
     *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
 }
+
+.module-tile,.module-tile .card-body,.module-tile-metadata { min-width:0; }
+.module-tile-metadata { overflow-wrap:anywhere; }
+.configuration-actions .btn,.module-tile-footer .btn { flex-shrink:0; }
+.operation-result { white-space:pre-wrap; overflow-wrap:anywhere; max-height:16rem; overflow-y:auto; }
+.module-tile:has(.dropdown-menu.show) { z-index:1; }

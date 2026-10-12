@@ -40,7 +40,7 @@
                     <div class="small text-muted mt-auto"><span class="module-type-badge">@module.TypeName</span>
                         @if (!string.IsNullOrWhiteSpace(module.HostName)) { <span class="ms-2">@module.HostName</span> }
                     </div>
-                    @if (canManage) { <partial name="Shared/_ModuleConfigurationActions" model="module"/> }
+                    <partial name="Shared/_ModuleConfigurationActions" model="module"/>
                 </div>
             </article>
         }
@@ -211,6 +211,7 @@
 
 
 @section Scripts {
+    <script src="~/js/operations.js" asp-append-version="true"></script>
     <script src="~/js/module-order.js" asp-append-version="true"></script>
     <script type="application/json" id="module-editor-state">@Json.Serialize(new {
         retry = Model.ReopenHandler,

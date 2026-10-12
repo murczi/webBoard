@@ -75,17 +75,15 @@ else {
                         @(string.IsNullOrWhiteSpace(tile.Module.Description) ? "No description" : tile.Module.Description)
                     </p>
 
-                    <div class="d-flex align-items-end justify-content-between gap-3 mt-auto">
-                        <div class="small text-muted">
+                    <div class="module-tile-footer d-flex flex-wrap align-items-end justify-content-between gap-3 mt-auto">
+                        <div class="module-tile-metadata small text-muted">
                             <span class="module-type-badge">@tile.Module.TypeName</span>
                             @if (!string.IsNullOrWhiteSpace(tile.Module.HostName)) {
                                 <span class="ms-2">@tile.Module.HostName</span>
                             }
                         </div>
-                        <div class="d-flex align-items-center gap-2">
-                            @if (tile.Module.IsEnabled && tile.Module.TypeName is "Docker" or "Systemd" && User.HasClaim("access", "Modules:read") && User.HasClaim("access", "Modules:operations")) {
-                                <a class="btn btn-sm btn-outline-secondary" asp-page="/Operations" asp-route-moduleId="@tile.Module.Id">Operations</a>
-                            }
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <partial name="_ModuleOperations" model="tile.Module" />
                             @if (Model.CanReadLogs) {
                                 <a class="btn btn-sm btn-outline-secondary" asp-page="/AuditLogs" asp-route-Resource="Modules" asp-route-TargetId="@tile.Module.Id">History</a>
                             }
@@ -96,6 +94,7 @@ else {
 
                         </div>
                     </div>
+                    <pre class="operation-result small mt-2 mb-0" role="status" hidden></pre>
                 </div>
             </article>
         }
@@ -104,6 +103,7 @@ else {
 
 <p id="dashboard-refresh-status" class="text-muted small mt-3" role="status"></p>
 @section Scripts {
+    <script src="~/js/operations.js" asp-append-version="true"></script>
     <script src="~/js/dashboard-refresh.js" asp-append-version="true"></script>
     <script src="~/js/module-order.js" asp-append-version="true"></script>
 }

@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using Domain.Interfaces.Services;
 using Domain.Model.Modules;
+using Domain.Model.Monitoring;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -19,14 +20,18 @@ public sealed class OperationsPageTests {
     private const string SigningKey = "operations-page-tests-signing-key-not-for-production";
 
     [Theory]
-    [InlineData("Docker", "Up", "Down", false)]
-    [InlineData("Systemd", "Start", "Stop", true)]
-    public async Task RendersOnlyFixedButtonsForTheModuleType(string kind, string startLabel, string stopLabel, bool unitFiles) {
+    [InlineData("/", "Docker", "Up", "Down", false)]
+    [InlineData("/", "Systemd", "Start", "Stop", true)]
+    [InlineData("/ModuleManagement", "Docker", "Up", "Down", false)]
+    [InlineData("/ModuleManagement", "Systemd", "Start", "Stop", true)]
+    public async Task RendersOnlyAllowedDropdownActionsOnTheItem(string page, string kind, string startLabel, string stopLabel, bool unitFiles) {
         await using var factory = Factory(kind);
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
-        var response = await client.GetAsync("/Operations?moduleId=1");
+        var response = await client.GetAsync(page);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("class=\"dropdown module-operations\"", html);
+        Assert.DoesNotContain("href=\"/Operations", html);
         Assert.Contains($">{startLabel}</button>", html);
         Assert.Contains($">{stopLabel}</button>", html);
         Assert.Contains(">Restart</button>", html);
@@ -56,22 +61,74 @@ public sealed class OperationsPageTests {
         await using var factory = Factory(kind, enabled);
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/Operations?moduleId=1")).StatusCode);
+        Assert.DoesNotContain("class=\"dropdown module-operations\"", await client.GetStringAsync("/"));
     }
 
     [Fact]
     public async Task UnavailableCapabilitiesShowNoButtons() {
         await using var factory = Factory("Docker", allowed: []);
         using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
-        var html = await client.GetStringAsync("/Operations?moduleId=1");
-        Assert.Contains("No service controls are currently available", html);
+        var html = await client.GetStringAsync("/");
+        Assert.DoesNotContain("class=\"dropdown module-operations\"", html);
         Assert.DoesNotContain("class=\"operation-form\"", html);
+    }
+
+    [Theory]
+    [InlineData(ModuleAccess.Read)]
+    [InlineData(ModuleAccess.Operations)]
+    public async Task DropdownRequiresReadAndOperations(string grant) {
+        await using var factory = Factory("Docker");
+        using var client = Client(factory, grant);
+        var html = await client.GetStringAsync("/");
+        Assert.DoesNotContain("class=\"dropdown module-operations\"", html);
+        Assert.DoesNotContain("class=\"operation-form\"", html);
+    }
+
+    [Fact]
+    public async Task OnlyAdvertisedCapabilitiesAreShown() {
+        await using var factory = Factory("Systemd", allowed: ["restart"]);
+        using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
+        var html = await client.GetStringAsync("/");
+        Assert.Contains(">Restart</button>", html);
+        Assert.DoesNotContain(">Start</button>", html);
+        Assert.DoesNotContain(">Stop</button>", html);
+        Assert.DoesNotContain(">Enable</button>", html);
+        Assert.DoesNotContain(">Disable</button>", html);
+    }
+
+    [Fact]
+    public async Task OldOperationsPageRedirectsToDashboard() {
+        await using var factory = Factory("Docker");
+        using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Operations);
+        var response = await client.GetAsync("/Operations?moduleId=1");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/ModuleManagement")]
+    public async Task AllAccessRendersOperationsAlongsideOtherActions(string page) {
+        await using var factory = Factory("Systemd");
+        using var client = Client(factory, ModuleAccess.Read, ModuleAccess.Create,
+            ModuleAccess.Update, ModuleAccess.Delete, ModuleAccess.Operations, "AuditLogs:read");
+        var html = await client.GetStringAsync(page);
+        Assert.Contains("class=\"dropdown module-operations\"", html);
+        Assert.Contains("flex-wrap", html);
+        Assert.Contains(">Restart</button>", html);
+        Assert.Contains(page == "/" ? ">History</a>" : ">Audit history</a>", html);
+        if (page != "/") {
+            Assert.Contains(">Edit module</button>", html);
+            Assert.Contains(">Delete module</button>", html);
+        }
     }
 
     private static WebApplicationFactory<OperationsModel> Factory(string kind, bool enabled = true, string[]? allowed = null) =>
         new PageFactory().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Testing")
                 .ConfigureServices(services => {
-                    services.AddSingleton<IModuleManagementService>(new Modules(new() { Id = 1, Name = "Test module", HostName = "Test host", TypeName = kind, IsEnabled = enabled }));
+                    services.AddSingleton<IModuleManagementService>(new Modules(new() { Id = 1, Name = "Test module", HostName = "Test host", ManagementUrl = "https://example.com", TypeName = kind, IsEnabled = enabled }));
+                    services.AddSingleton<IMonitoringReader>(new Monitoring());
                     services.AddSingleton<IModuleOperations>(new Operations(allowed ?? ["start", "stop", "restart", "enable", "disable"]));
                 }));
 
@@ -97,14 +154,20 @@ public sealed class OperationsPageTests {
         }
     }
 
+    private sealed class Monitoring : IMonitoringReader {
+        public Task<IReadOnlyList<MonitoringStatus>> LatestAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<MonitoringStatus>>([]);
+        public Task<IReadOnlyList<HistoryModule>> ModulesAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task<MonitoringBlock> BlockAsync(int moduleId, DateTimeOffset at, CancellationToken token) => throw new NotSupportedException();
+        public Task<HistorySlice> HistoryAsync(int moduleId, DateTimeOffset from, DateTimeOffset until, CancellationToken token) => throw new NotSupportedException();
+    }
     private sealed class Operations(string[] allowed) : IModuleOperations {
         public Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) => Task.FromResult<IReadOnlyList<string>>(allowed);
         public Task<ModuleOperationResult> ExecuteAsync(int actorId, ModuleOperationRequest request, CancellationToken token) => throw new NotSupportedException();
     }
     private sealed class Modules(ModuleModel module) : IModuleManagementService {
         public Task<IReadOnlyList<ModuleModel>> GetAllAsync(CancellationToken token = default) => Task.FromResult<IReadOnlyList<ModuleModel>>([module]);
-        public Task<IReadOnlyList<ModuleOptionModel>> GetHostsAsync(CancellationToken token = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<ModuleOptionModel>> GetTypesAsync(CancellationToken token = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ModuleOptionModel>> GetHostsAsync(CancellationToken token = default) => Task.FromResult<IReadOnlyList<ModuleOptionModel>>([]);
+        public Task<IReadOnlyList<ModuleOptionModel>> GetTypesAsync(CancellationToken token = default) => Task.FromResult<IReadOnlyList<ModuleOptionModel>>([]);
         public Task<ModuleModel> AddAsync(ModuleModel model, int actor, string comment, CancellationToken token = default) => throw new NotSupportedException();
         public Task<bool> UpdateAsync(ModuleModel model, int actor, string comment, CancellationToken token = default) => throw new NotSupportedException();
         public Task<bool> DeleteAsync(int id, int actor, string comment, CancellationToken token = default) => throw new NotSupportedException();
