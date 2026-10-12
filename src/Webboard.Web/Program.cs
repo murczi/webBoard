@@ -52,9 +52,13 @@ builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IUserAuthenticationRepository, UserAuthenticationRepository>();
 builder.Services.AddScoped<IHostRepository, HostRepository>();
-builder.Services.AddScoped<IHostManagementService, HostManagementService>();
+builder.Services.AddScoped<HostManagementService>();
+builder.Services.AddScoped<IHostManagementService, AuthorizedHostManagementService>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
-builder.Services.AddScoped<IModuleManagementService, ModuleManagementService>();
+builder.Services.AddScoped<ModuleManagementService>();
+builder.Services.AddScoped<IModuleManagementService, AuthorizedModuleManagementService>();
+builder.Services.AddScoped<IResourceAuthorization, ResourceAuthorization>();
+builder.Services.AddScoped<ISessionAccessValidator, SessionAccessValidator>();
 builder.Services.AddScoped<JwtSessionService>();
 builder.Services.AddScoped<IModuleOperations, ModuleOperations>();
 builder.Services.AddHttpClient<IAgentOperationsClient, Webboard.Web.Services.AgentOperationsClient>(client => client.Timeout = TimeSpan.FromSeconds(310))
@@ -113,6 +117,11 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context => {
+                var validator = context.HttpContext.RequestServices.GetRequiredService<ISessionAccessValidator>();
+                if (!await validator.ValidateAsync(context.Principal!, context.HttpContext.RequestAborted))
+                    context.Fail("Account is no longer active.");
+            },
             OnMessageReceived = context => {
                 context.Token = context.Request.Cookies[JwtOptions.CookieName];
                 return Task.CompletedTask;

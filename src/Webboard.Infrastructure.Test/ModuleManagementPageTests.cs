@@ -26,7 +26,7 @@ public sealed class ModuleManagementPageTests {
         string kind, string addressField, string portField, string port) {
         await using var factory = new PageFactory().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Testing").ConfigureServices(services =>
-                services.AddSingleton<IModuleManagementService>(new Modules(kind))));
+                { services.AddSingleton<ISessionAccessValidator, PreserveTestClaimsValidator>(); services.AddSingleton<IModuleManagementService>(new Modules(kind)); }));
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions {
             BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false
         });
