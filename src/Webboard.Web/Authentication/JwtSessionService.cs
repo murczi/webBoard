@@ -18,8 +18,8 @@ public sealed class JwtSessionService(
 
     private readonly JwtOptions jwtOptions = options.Value;
     private readonly PasswordHasher<UserLoginModel> passwordHasher = new();
-    private readonly string dummyPasswordHash = new PasswordHasher<UserLoginModel>()
-        .HashPassword(null!, "invalid-password");
+    private static readonly Lazy<string> dummyPasswordHash = new(() => new PasswordHasher<UserLoginModel>()
+        .HashPassword(null!, "invalid-password"));
 
     public async Task<string?> CreateTokenAsync(
         string userName,
@@ -28,7 +28,7 @@ public sealed class JwtSessionService(
         CancellationToken cancellationToken = default) {
         var user = await users.FindByNameAsync(userName.Trim(), cancellationToken);
         if (user is null) {
-            passwordHasher.VerifyHashedPassword(null!, dummyPasswordHash, password);
+            passwordHasher.VerifyHashedPassword(null!, dummyPasswordHash.Value, password);
             return null;
         }
 
