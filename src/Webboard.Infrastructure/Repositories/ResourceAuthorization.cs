@@ -11,12 +11,7 @@ public sealed class ResourceAuthorization(IUserCrudAccessRepository users) : IRe
     public async Task RequireAsync(int actorId, string resource, string action, CancellationToken token) {
         var grants = await GetCurrentAsync(actorId, token);
         var grant = grants?.SingleOrDefault(x => x.Resource == resource);
-        var allowed = action switch {
-            "create" => grant?.CanCreate == true,
-            "update" => grant?.CanUpdate == true,
-            "delete" => grant?.CanDelete == true,
-            _ => false
-        };
+        var allowed = grant is not null && PermissionResources.ActionsFor(grant).Contains(action, StringComparer.Ordinal);
         if (!allowed) throw new UnauthorizedAccessException("Current resource permission is required.");
     }
 }

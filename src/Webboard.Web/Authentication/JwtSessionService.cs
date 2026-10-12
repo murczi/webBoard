@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Authentication;
+using Domain.Model.UserCrudAccess;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -58,13 +59,8 @@ public sealed class JwtSessionService(
             new(RememberMeClaimType, rememberMe.ToString().ToLowerInvariant())
         };
 
-        foreach (var access in user.Access) {
-            AddAccessClaim(claims, access.Resource, "operations", access.CanOperate);
-            AddAccessClaim(claims, access.Resource, "create", access.CanCreate);
-            AddAccessClaim(claims, access.Resource, "read", access.CanRead || access.CanCreate || access.CanUpdate || access.CanDelete);
-            AddAccessClaim(claims, access.Resource, "update", access.CanUpdate);
-            AddAccessClaim(claims, access.Resource, "delete", access.CanDelete);
-        }
+        foreach (var access in user.Access)
+            foreach (var action in PermissionResources.ActionsFor(access)) AddAccessClaim(claims, access.Resource, action, true);
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),

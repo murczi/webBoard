@@ -2,6 +2,7 @@ namespace Webboard.Web.Authentication;
 
 using System.Security.Claims;
 using Domain.Interfaces.Services;
+using Domain.Model.UserCrudAccess;
 
 public interface ISessionAccessValidator {
     Task<bool> ValidateAsync(ClaimsPrincipal principal, CancellationToken token);
@@ -14,14 +15,9 @@ public sealed class SessionAccessValidator(IResourceAuthorization access) : ISes
         var grants = await access.GetCurrentAsync(id, token);
         if (grants is null || principal.Identity is not ClaimsIdentity identity) return false;
         foreach (var claim in identity.FindAll(JwtSessionService.AccessClaimType).ToArray()) identity.RemoveClaim(claim);
-        foreach (var grant in grants) {
-            Add("create", grant.CanCreate); Add("update", grant.CanUpdate); Add("delete", grant.CanDelete);
-            Add("operations", grant.CanOperate);
-            Add("read", grant.CanRead || grant.CanCreate || grant.CanUpdate || grant.CanDelete || grant.CanOperate);
-            void Add(string action, bool allowed) {
-                if (allowed) identity.AddClaim(new(JwtSessionService.AccessClaimType, $"{grant.Resource}:{action}"));
-            }
-        }
+        foreach (var grant in grants)
+            foreach (var action in PermissionResources.ActionsFor(grant))
+                identity.AddClaim(new(JwtSessionService.AccessClaimType, $"{grant.Resource}:{action}"));
         return true;
     }
 }

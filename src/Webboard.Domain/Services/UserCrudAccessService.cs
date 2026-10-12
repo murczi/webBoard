@@ -6,16 +6,8 @@ using Model.UserCrudAccess;
 
 public class UserCrudAccessService(IUserCrudAccessRepository repository)
     : IUserCrudAccessService {
-    private static readonly IReadOnlyDictionary<string, bool> Resources =
-        new Dictionary<string, bool>(StringComparer.Ordinal)
-        {
-            ["Users"] = false,
-            ["Hosts"] = false,
-            ["Modules"] = false,
-            ["ModuleTypes"] = true,
-            ["AuditLogs"] = true,
-            ["MonitoringHistory"] = true
-        };
+    private static readonly IReadOnlyDictionary<string, bool> Resources = PermissionResources.All
+        .ToDictionary(x => x.Key, x => x.IsReadOnly, StringComparer.Ordinal);
 
     public Task<IReadOnlyList<UserSummaryModel>> GetUsersAsync(
         CancellationToken cancellationToken = default) =>
@@ -86,16 +78,7 @@ public class UserCrudAccessService(IUserCrudAccessRepository repository)
             }
 
             item.UserId = userId;
-            item.IsReadOnlyResource = resource.Value;
-            if (resource.Value) {
-                item.CanCreate = false;
-                item.CanUpdate = false;
-                item.CanDelete = false;
-            }
-
-            if (resource.Key != "Modules") item.CanOperate = false;
-            item.CanRead |= item.CanOperate;
-            item.CanRead |= item.CanCreate || item.CanUpdate || item.CanDelete;
+            PermissionResources.Normalize(item);
 
             if (existing.TryGetValue(resource.Key, out var current)) {
                 item.Id = current.Id;
