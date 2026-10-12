@@ -48,6 +48,9 @@ public class ModuleManagementModel(
 
         if (CanCreate || CanUpdate) {
             Hosts = await modules.GetHostsAsync(cancellationToken);
+            var unavailable = allModules.Where(x => x.HostId.HasValue && !Hosts.Any(h => h.Id == x.HostId)).DistinctBy(x => x.HostId)
+                .Select(x => new ModuleOptionModel(x.HostId!.Value, $"{x.HostName ?? "Previous host"} (unavailable)") { IsAvailable = false });
+            Hosts = Hosts.Concat(unavailable).ToList();
             Types = await modules.GetTypesAsync(cancellationToken);
         }
         return Page();

@@ -16,10 +16,12 @@ public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions opt
                           where module.IsEnabled && !module.DeletionFlag
                           join latest in db.LatestMonitoring.AsNoTracking() on module.Id equals latest.ModuleId into results
                           from latest in results.DefaultIfEmpty()
-                          select new { module.Id, Latest = latest }).ToListAsync(token);
+                          select new { module.Id, module.HostId, HostExists = module.Host != null, HostEnabled = module.Host != null && module.Host.IsEnabled, HostDeleted = module.Host != null && module.Host.DeletionFlag, Latest = latest }).ToListAsync(token);
         var now = DateTimeOffset.UtcNow;
         return rows.Select(row => {
             var latest = row.Latest;
+            var unavailable = ModuleEligibility.UnavailableReason(true, row.HostId, row.HostExists, row.HostEnabled, row.HostDeleted);
+            if (unavailable is not null) return new MonitoringStatus(row.Id, new(ModuleHealthState.Unknown, null, unavailable), latest?.Timestamp, false);
             if (latest is null) return new MonitoringStatus(row.Id, new(ModuleHealthState.Unknown, null, "Awaiting monitoring data"), null, false);
             var stale = latest.FreshUntil <= now;
             var health = new ModuleHealthResult(stale ? ModuleHealthState.Unknown : latest.State,

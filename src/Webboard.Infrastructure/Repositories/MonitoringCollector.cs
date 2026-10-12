@@ -10,8 +10,7 @@ using Npgsql;
 
 public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthChecker checker, MonitoringOptions options) : IMonitoringCollector {
     public async Task<IReadOnlyList<int>> EnabledModuleIdsAsync(CancellationToken token) =>
-        await db.Modules.AsNoTracking().Where(x => x.IsEnabled && !x.DeletionFlag &&
-            (x.HostId == null || x.Host != null && x.Host.IsEnabled && !x.Host.DeletionFlag) &&
+        await db.Modules.AsNoTracking().Where(ModuleQueries.Monitorable).Where(x =>
             !db.LatestMonitoring.Any(latest => latest.ModuleId == x.Id && latest.ConfigurationRevision == x.DateUpdated && latest.Timestamp > DateTimeOffset.UtcNow.AddSeconds(-options.IntervalSeconds))).Select(x => x.Id).ToListAsync(token);
     public async Task CollectAsync(int moduleId, CancellationToken token) {
         await using var transaction = await db.Database.BeginTransactionAsync(token);
@@ -21,13 +20,13 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         if (!(bool)(await acquire.ExecuteScalarAsync(token))!) return;
         var module = await db.Modules.AsNoTracking().Include(x => x.Type).Include(x => x.Host)
             .SingleOrDefaultAsync(x => x.Id == moduleId, token);
-        if (module is null || !module.IsEnabled || module.DeletionFlag || module.HostId.HasValue && (module.Host is null || !module.Host.IsEnabled || module.Host.DeletionFlag)) return;
+        if (module is null || !ModuleQueries.IsMonitorable(module)) return;
         var latest = await db.LatestMonitoring.SingleOrDefaultAsync(x => x.ModuleId == moduleId, token);
         var now = DateTimeOffset.UtcNow;
         if (latest is not null && latest.ConfigurationRevision == module.DateUpdated && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
         var model = new ModuleModel {
             Id = module.Id, Name = module.FriendlyName, TypeId = module.TypeId, TypeName = module.Type?.Name ?? "",
-            HostId = module.HostId, HostName = module.Host?.Name, HostAgentBaseUrl = module.Host?.AgentBaseUrl,
+            HostId = module.HostId, HostExists = module.Host != null, HostIsEnabled = module.Host?.IsEnabled == true, HostIsDeleted = module.Host?.DeletionFlag == true, HostName = module.Host?.Name, HostAgentBaseUrl = module.Host?.AgentBaseUrl,
             HealthCheckUrl = module.HealthCheckUrl, ContainerId = module.ContainerId, ServiceName = module.ServiceName,
             MinecraftServerAddress = module.MinecraftServerAddress, MinecraftServerPort = module.MinecraftServerPort,
             SteamServerAddress = module.SteamServerAddress, SteamQueryPort = module.SteamQueryPort, SteamQueryPlayers = module.SteamQueryPlayers, IsEnabled = true

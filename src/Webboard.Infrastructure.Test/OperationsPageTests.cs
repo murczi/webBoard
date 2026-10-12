@@ -128,7 +128,7 @@ public sealed class OperationsPageTests {
             builder.UseEnvironment("Testing")
                 .ConfigureServices(services => {
                     services.AddSingleton<ISessionAccessValidator, PreserveTestClaimsValidator>();
-                    services.AddSingleton<IModuleManagementService>(new Modules(new() { Id = 1, Name = "Test module", HostName = "Test host", ManagementUrl = "https://example.com", TypeName = kind, IsEnabled = enabled }));
+                    services.AddSingleton<IModuleManagementService>(new Modules(new() { Id = 1, Name = "Test module", HostName = "Test host", HostId = 1, HostExists = true, HostIsEnabled = true, HostAgentBaseUrl = "https://agent.test", ContainerId = "target", ServiceName = "test.service", ManagementUrl = "https://example.com", TypeName = kind, IsEnabled = enabled }));
                     services.AddSingleton<IMonitoringReader>(new Monitoring());
                     services.AddSingleton<IModuleOperations>(new Operations(allowed ?? ["start", "stop", "restart", "enable", "disable"]));
                 }));

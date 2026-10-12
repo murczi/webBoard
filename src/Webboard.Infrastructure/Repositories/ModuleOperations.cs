@@ -9,8 +9,8 @@ using Npgsql;
 
 public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClient agent) : IModuleOperations {
     public async Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) {
-        if (!module.IsEnabled || module.HostAgentBaseUrl is null || module.TypeName is not ("Docker" or "Systemd")) return [];
-        try { return await agent.GetAllowedOperationsAsync(module.HostAgentBaseUrl, module.TypeName, module.TypeName == "Docker" ? module.ContainerId ?? "" : module.ServiceName ?? "", token); }
+        if (!ModuleEligibility.CanOperate(module) || module.HostAgentBaseUrl is not { } baseUrl) return [];
+        try { return await agent.GetAllowedOperationsAsync(baseUrl, module.TypeName, module.TypeName == "Docker" ? module.ContainerId ?? "" : module.ServiceName ?? "", token); }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException) { return []; }
     }
     public async Task<ModuleOperationResult> ExecuteAsync(int actorId, ModuleOperationRequest request, CancellationToken cancellationToken) {

@@ -101,7 +101,7 @@
                                 <select asp-for="Module.HostId" class="form-select" data-searchable-select data-search-placeholder="Search hosts…">
                                     <option value="">No host (HTTP/S or Minecraft)</option>
                                     @foreach (var host in Model.Hosts) {
-                                        <option value="@host.Id">@host.Name</option>
+                                        <option value="@host.Id" hidden="@(!host.IsAvailable)">@host.Name</option>
                                     }
                                 </select>
                             </div>

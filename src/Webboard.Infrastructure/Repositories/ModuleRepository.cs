@@ -17,6 +17,8 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                 TypeId = module.TypeId,
                 TypeName = module.Type != null ? module.Type.Name : string.Empty,
                 HostId = module.HostId,
+                HostExists = module.Host != null, HostIsEnabled = module.Host != null && module.Host.IsEnabled,
+                HostIsDeleted = module.Host != null && module.Host.DeletionFlag,
                 HostName = module.Host != null ? module.Host.Name : null,
                 HostAgentBaseUrl = module.Host != null ? module.Host.AgentBaseUrl : null,
                 Name = module.FriendlyName,
@@ -38,7 +40,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
 
     public async Task<IReadOnlyList<ModuleOptionModel>> GetHostsAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Hosts.AsNoTracking()
-            .Where(host => !host.DeletionFlag)
+            .Where(host => !host.DeletionFlag && host.IsEnabled)
             .OrderBy(host => host.Name)
             .Select(host => new ModuleOptionModel(host.Id, host.Name))
             .ToListAsync(cancellationToken);

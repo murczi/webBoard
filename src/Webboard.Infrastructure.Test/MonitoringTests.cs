@@ -32,6 +32,20 @@ public sealed class MonitoringTests : IAsyncLifetime {
     }
     private WebboardDbContext Context() => new(new DbContextOptionsBuilder<WebboardDbContext>().UseNpgsql(connectionString).Options);
     [PostgresFact]
+    public async Task DisabledHostStopsMonitoringCapabilitiesAndExplainsDashboardState() {
+        await using var db = Context();
+        await db.Hosts.ExecuteUpdateAsync(s => s.SetProperty(x => x.IsEnabled, false));
+        var collector = new MonitoringCollector(db, new FakeChecker(), options);
+        Assert.Empty(await collector.EnabledModuleIdsAsync(default));
+        var model = Assert.Single(await new ModuleRepository(db).GetAllAsync());
+        Assert.Empty(await new ModuleRepository(db).GetHostsAsync());
+        Assert.False(ModuleEligibility.CanOperate(model));
+        Assert.Empty(await new ModuleOperations(db, new FakeAgent()).AllowedServiceOperationsAsync(model, default));
+        var status = Assert.Single(await new MonitoringReader(db, options).LatestAsync(default));
+        Assert.Equal("Monitoring paused: host is disabled", status.Health.Message);
+    }
+
+    [PostgresFact]
     public async Task CollectionPersistsAndDashboardUsesLatestWithoutExecutingChecks() {
         await using var db = Context(); var checker = new FakeChecker();
         var collector = new MonitoringCollector(db, checker, options);

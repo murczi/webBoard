@@ -5,6 +5,9 @@ public class ModuleModel {
     public int TypeId { get; set; }
     public string TypeName { get; set; } = string.Empty;
     public int? HostId { get; set; }
+    public bool HostExists { get; set; }
+    public bool HostIsEnabled { get; set; }
+    public bool HostIsDeleted { get; set; }
     public string? HostName { get; set; }
     public string? HostAgentBaseUrl { get; set; }
     public required string Name { get; set; }
