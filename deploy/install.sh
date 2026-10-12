@@ -101,7 +101,7 @@ prepare_agent_account() {
     esac
 }
 valid_systemd_service() {
-    local pattern='^[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,249}\.service$'
+    local pattern='^[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,247}\.service$'
     [[ ${#1} -le 256 && "$1" =~ $pattern ]]
 }
 ensure_polkit() {

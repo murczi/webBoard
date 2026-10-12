@@ -2,7 +2,7 @@ namespace WebBoard.Agent;
 
 using System.Diagnostics;
 using System.Text;
-using System.Text.RegularExpressions;
+using Webboard.Domain.Model.Modules;
 using System.Runtime.InteropServices;
 
 public sealed record OperationRequest(Guid RequestId, int ModuleId, string Kind, string Target, string Operation);
@@ -80,7 +80,7 @@ public sealed class AgentOperations(IConfiguration configuration, DockerSocketCl
             }
             else if (request.Kind == "Systemd") {
                 if (request.Operation is not ("start" or "stop" or "restart" or "enable" or "disable") ||
-                    !Regex.IsMatch(request.Target, @"\A[A-Za-z0-9_][A-Za-z0-9_.@:\\-]{0,249}\.service\z"))
+                    !SystemdUnitName.IsValid(request.Target))
                     throw new ArgumentException("Invalid service operation.");
                 if (!Allows("Systemd", request.Target)) throw new UnauthorizedAccessException();
                 result = await new SystemdClient(process).ControlAsync(request.Target, request.Operation, cancellationToken);

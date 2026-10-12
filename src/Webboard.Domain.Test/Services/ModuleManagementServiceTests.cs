@@ -251,6 +251,12 @@ public class ModuleManagementServiceTests {
         Assert.Contains("100", exception.Message);
     }
 
+    [Theory]
+    [InlineData("example.service", true)] [InlineData("_example.service", true)]
+    [InlineData("example@disk\\x2dname.service", true)] [InlineData("-bad.service", false)]
+    [InlineData("example.SERVICE", false)] [InlineData("bad/name.service", false)]
+    public void SystemdNamesFollowTheAgentAndInstallerContract(string name, bool valid) => Assert.Equal(valid, SystemdUnitName.IsValid(name));
+
     [Fact]
     public async Task MinecraftRequiresAnExplicitPortEvenWithoutBrowserValidation() {
         var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 4, ValidTypeName = "Minecraft" });

@@ -2,7 +2,7 @@ namespace WebBoard.Agent;
 
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
+using Webboard.Domain.Model.Modules;
 
 public sealed partial class SystemdClient {
     private readonly IProcessRunner process;
@@ -65,8 +65,8 @@ public sealed partial class SystemdClient {
             return null;
 
         var output = await RunSystemctlAsync([
-            "show", serviceName, "--no-pager",
-            "--property=Id,Description,LoadState,ActiveState,SubState"
+            "show", "--no-pager",
+            "--property=Id,Description,LoadState,ActiveState,SubState", "--", serviceName
         ], cancellationToken, allowNonZeroExitCode: true);
         var properties = ParsePropertyBlocks(output).FirstOrDefault();
         if (properties is null ||
@@ -138,11 +138,8 @@ public sealed partial class SystemdClient {
                 .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal))
             .ToList();
 
-    private static bool IsValidServiceName(string serviceName) =>
-        serviceName.Length <= 256 && ServiceNamePattern().IsMatch(serviceName);
+    private static bool IsValidServiceName(string serviceName) => SystemdUnitName.IsValid(serviceName);
 
-    [GeneratedRegex(@"^[A-Za-z0-9_.@:\\-]+\.service$", RegexOptions.CultureInvariant)]
-    private static partial Regex ServiceNamePattern();
 }
 
 public sealed record SystemdServiceDto(

@@ -133,11 +133,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
     private static string? EmptyToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static bool IsValidSystemdServiceName(string value) =>
-        value.Length <= 256 &&
-        value.EndsWith(".service", StringComparison.OrdinalIgnoreCase) &&
-        value.All(character => char.IsAsciiLetterOrDigit(character) ||
-            character is '_' or '.' or '@' or ':' or '\\' or '-');
+    private static bool IsValidSystemdServiceName(string value) => SystemdUnitName.IsValid(value);
 
     private static bool IsValidMinecraftAddress(string value) => ServerAddress.IsValid(value);
 

@@ -93,6 +93,8 @@ public sealed class AgentOperationTests {
         release.SetResult(new(false, "Failed", 19)); Assert.Equal(19, (await first).ExitCode);
     }
     [Theory]
+    [InlineData("Systemd", "-bad.service", "start")]
+    [InlineData("Systemd", "bad.SERVICE", "start")]
     [InlineData("Command", "example.service", "execute")]
     [InlineData("Docker", "example", "enable")]
     [InlineData("Systemd", "example.service", "execute")]

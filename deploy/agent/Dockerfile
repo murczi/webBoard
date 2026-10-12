@@ -10,6 +10,7 @@ WORKDIR /source
 
 # Copy project files first so dependency restore can be cached across source edits.
 COPY src/WebBoard.Agent/WebBoard.Agent.csproj src/WebBoard.Agent/
+COPY src/Webboard.Domain.Model/ src/Webboard.Domain.Model/
 # Restore NuGet packages for the application and its project references.
 RUN dotnet restore src/WebBoard.Agent/WebBoard.Agent.csproj
 
