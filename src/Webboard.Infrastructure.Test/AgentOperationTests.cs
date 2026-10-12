@@ -129,6 +129,16 @@ public sealed class AgentOperationTests {
         Assert.Equal(calls, runner.Calls.Count);
     }
     [Fact]
+    public async Task DiscoveryAndControlsUseTheSameBoundedCaptureAndCancellation() {
+        var runner = new ProcessRunner();
+        var capture = await runner.CaptureAsync("/usr/bin/printf", ["%s", new string('a', 200)], TimeSpan.FromSeconds(1), 32, default);
+        Assert.True(capture.Truncated); Assert.Equal(32, capture.StandardOutput.Length); Assert.Equal(0, capture.ExitCode);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        capture = await runner.CaptureAsync("/usr/bin/sleep", ["10"], TimeSpan.FromSeconds(5), 32, cancellation.Token);
+        Assert.True(capture.Interrupted); Assert.False(capture.TimedOut);
+    }
+
+    [Fact]
     public async Task FailedProcessReturnsExitCode() {
         var result = await new ProcessRunner().RunAsync("/usr/bin/false", [], TimeSpan.FromSeconds(1), default);
         Assert.False(result.Success); Assert.Equal(1, result.ExitCode);

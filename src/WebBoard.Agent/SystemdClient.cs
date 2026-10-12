@@ -1,7 +1,5 @@
 namespace WebBoard.Agent;
 
-using System.ComponentModel;
-using System.Diagnostics;
 using Webboard.Domain.Model.Modules;
 
 public sealed partial class SystemdClient {
@@ -84,49 +82,13 @@ public sealed partial class SystemdClient {
             $"{activeState} ({subState})");
     }
 
-    private static async Task<string> RunSystemctlAsync(
-        IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken,
-        bool allowNonZeroExitCode = false) {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        cancellationToken = timeout.Token;
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "systemctl",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-
-        using var process = new Process { StartInfo = startInfo };
-        try {
-            process.Start();
-        }
-        catch (Win32Exception exception) {
-            throw new InvalidOperationException("systemctl is not installed on this host.", exception);
-        }
-
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        try {
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-            throw;
-        }
-
-        var output = await standardOutput;
-        var error = await standardError;
-        if (process.ExitCode != 0 && !allowNonZeroExitCode)
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(error) ? "systemctl failed." : error.Trim());
-        return output;
+    private async Task<string> RunSystemctlAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, bool allowNonZeroExitCode = false) {
+        var result = await process.CaptureAsync("/usr/bin/systemctl", arguments, TimeSpan.FromSeconds(5), 1048576, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (result.TimedOut) throw new OperationCanceledException("The systemd request timed out.");
+        if (!result.Started || result.Truncated) throw new InvalidOperationException(result.Truncated ? "systemd response exceeded the allowed size." : result.StandardError);
+        if (result.ExitCode != 0 && !allowNonZeroExitCode) throw new InvalidOperationException(string.IsNullOrWhiteSpace(result.StandardError) ? "systemctl failed." : result.StandardError.Trim());
+        return result.StandardOutput;
     }
 
     private static IReadOnlyList<Dictionary<string, string>> ParsePropertyBlocks(string output) =>
