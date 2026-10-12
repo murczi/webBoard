@@ -18,7 +18,8 @@ public class HostConfiguration : IEntityTypeConfiguration<HostEntity> {
                .IsRequired()
                .HasMaxLength(maxLength: 2048);
 
-        builder.HasIndex(indexExpression: host => host.Name)
+        builder.Property(host => host.NormalizedName).HasComputedColumnSql("lower(\"Name\")", stored: true).HasMaxLength(100);
+        builder.HasIndex(indexExpression: host => host.NormalizedName)
                .IsUnique();
 
         builder.HasMany(navigationExpression: host => host.Modules)

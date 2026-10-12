@@ -3,6 +3,8 @@ namespace Webboard.Infrastructure.Configuration.Entities;
 public class HostEntity {
     public int Id { get; set; }
 
+    public string NormalizedName { get; private set; } = "";
+
     public required string Name { get; set; }
 
     public required string AgentBaseUrl { get; set; }

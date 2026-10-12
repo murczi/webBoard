@@ -52,6 +52,18 @@ public sealed class UserAccessTests : IAsyncLifetime {
 
 
     [PostgresFact]
+    public async Task DatabaseRejectsCaseVariantsAndRepositoryReturnsAValidationConflict() {
+        var actor = await Register("host-admin");
+        await using var first = Context(); await using var second = Context();
+        var one = new HostRepository(first); var two = new HostRepository(second);
+        Assert.False(await one.NameExistsAsync("Server")); Assert.False(await two.NameExistsAsync("server"));
+        await one.AddAsync(new() { Name = "Server", AgentBaseUrl = "https://agent.test", DateCreated = DateTime.UtcNow }, actor, "Create");
+        await Assert.ThrowsAsync<ArgumentException>(() => two.AddAsync(new() { Name = "server", AgentBaseUrl = "https://agent.test", DateCreated = DateTime.UtcNow }, actor, "Create"));
+        Assert.True(await one.NameExistsAsync("SERVER"));
+        Assert.Equal(1, await first.Hosts.CountAsync());
+    }
+
+    [PostgresFact]
     public async Task SteamDowngradeArchivesConfigurationAndDisablesDependentModules() {
         await using var db = Context();
         db.Modules.Add(new() { FriendlyName = "Steam", TypeId = 5, SteamServerAddress = "steam.test", SteamQueryPort = 27015,

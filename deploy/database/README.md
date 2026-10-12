@@ -154,3 +154,10 @@ Steam downgrades archive affected rows in `ModuleRollbackArchive` as JSON and
 convert those modules to disabled Http modules before removing type-specific
 columns. Back up first. Reapplying migrations does not automatically restore the
 old configuration; use the archived snapshot to explicitly reconfigure the module.
+
+Host names are uniquely reserved case-insensitively, including deleted hosts. The
+normalization migration stops before changing data if duplicates exist. Inspect with
+`SELECT lower("Name"), array_agg("Id") FROM "Hosts" GROUP BY lower("Name") HAVING count(*) > 1;`
+and explicitly rename conflicting rows before retrying. No hosts or audit rows are
+automatically merged or deleted. PostgreSQL performs the canonical case folding for
+both the generated key and lookup, so application locale cannot change uniqueness.

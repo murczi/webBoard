@@ -5,6 +5,7 @@ using Configuration.Entities;
 using Domain.Interfaces.Repositories;
 using Domain.Model.Hosts;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
     public async Task<IReadOnlyList<HostModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
@@ -21,15 +22,12 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             })
             .ToListAsync(cancellationToken);
 
-    public Task<bool> NameExistsAsync(
-        string name,
-        int? excludingHostId = null,
-        CancellationToken cancellationToken = default) {
-        var normalizedName = name.ToLower();
-        return dbContext.Hosts.AnyAsync(
-            host => host.Name.ToLower() == normalizedName &&
-                    (!excludingHostId.HasValue || host.Id != excludingHostId.Value),
-            cancellationToken);
+    public async Task<bool> NameExistsAsync(string name, int? excludingHostId = null, CancellationToken cancellationToken = default) {
+        var excluded = excludingHostId ?? 0;
+        return await dbContext.Database.SqlQuery<int>($"""
+            SELECT COUNT(*)::integer AS "Value" FROM "Hosts"
+            WHERE "NormalizedName" = lower({name}) AND "Id" <> {excluded}
+            """).SingleAsync(cancellationToken) > 0;
     }
 
     public async Task AddAsync(
@@ -55,7 +53,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             Host = entity,
             Actor = null!
         });
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         host.Id = entity.Id;
     }
 
@@ -67,20 +65,20 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag).Select(x => x.Id).ToListAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
-        var updated = await dbContext.Hosts
+        var updated = await TranslateNameConflictAsync(async () => await dbContext.Hosts
             .Where(entity => entity.Id == host.Id && !entity.DeletionFlag)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(entity => entity.Name, host.Name)
                     .SetProperty(entity => entity.AgentBaseUrl, host.AgentBaseUrl)
                     .SetProperty(entity => entity.IsEnabled, host.IsEnabled),
-                cancellationToken) > 0;
+                cancellationToken)) > 0;
         if (!updated)
             return false;
 
         await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
         AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
@@ -105,9 +103,20 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
 
         await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
         AddAuditLog(hostId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+
+    private static async Task<T> TranslateNameConflictAsync<T>(Func<Task<T>> action) {
+        try { return await action(); }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException {
+            SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Hosts_NormalizedName" }) {
+            throw new ArgumentException("A host with this name already exists.", exception);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation && exception.ConstraintName == "IX_Hosts_NormalizedName") {
+            throw new ArgumentException("A host with this name already exists.", exception);
+        }
     }
 
     private void AddAuditLog(int hostId, int actorId, string comment, Webboard.Domain.Model.AuditLogs.AuditAction action) =>
