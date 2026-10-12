@@ -334,4 +334,4 @@ Deployments beneath a URL prefix can set `Application__PathBase=/board`. The pro
 
 The UI and agent share `Webboard.Contracts` for operation outcomes, health, Docker/systemd discovery, and unit-name validation. Agent protocol version 1 retains the original JSON fields; the optional `X-Webboard-Agent-Protocol` header negotiates compatibility. Missing headers remain supported for older releases; unsupported explicit versions fail before execution. Upgrade both components for new protocol versions. Domain operation commands and discovery view models remain separate from wire payloads.
 
-The [baseline codebase audit](CODEBASE_AUDIT.md) and [implementation record](AUDIT_IMPLEMENTATION.md) document the 35 separately committed fixes, architecture changes, and verification scope.
+The [baseline codebase audit](CODEBASE_AUDIT.md) and [implementation record](AUDIT_IMPLEMENTATION.md) document the 35 separately committed planned tasks, the additional container runtime fix, architecture changes, and verification scope.

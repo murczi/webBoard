@@ -1,6 +1,6 @@
 Codebase audit — 12 October 2026
 
-**Historical baseline:** these findings and the 270-file inventory describe commit `4d7b3a6`, before implementation. All 35 task IDs have subsequently been addressed in separate commits. See [the implementation and verification record](AUDIT_IMPLEMENTATION.md) for the resulting behavior and test coverage. Source links below deliberately point to the baseline commit.
+**Historical baseline:** these findings and the 270-file inventory describe commit `4d7b3a6`, before implementation. All 35 planned task IDs have subsequently been addressed in separate commits. Final container verification found an additional UI image runtime dependency defect, fixed separately as F15. See [the implementation and verification record](AUDIT_IMPLEMENTATION.md) for the resulting behavior and test coverage. Source links below deliberately point to the baseline commit.
 
 The application already uses object-oriented architecture: dependency injection, service/repository interfaces, concrete adapters, and polymorphic health handlers. Its domain models mostly hold data, however, and several business rules are repeated across layers. More encapsulation and composition would help; a wholesale rewrite or inheritance hierarchy for every model would not.
 

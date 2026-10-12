@@ -29,6 +29,11 @@ RUN dotnet publish src/Webboard.Web/Webboard.Web.csproj \
 # Runtime stage: ASP.NET runtime plus published output only.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+# Npgsql's PostgreSQL authentication negotiation uses the native GSSAPI library.
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 # Default internal HTTP port; the HTTPS reverse proxy connects here.
 ENV ASPNETCORE_HTTP_PORTS=8080
 # Metadata only: Compose ports publishes a host port.

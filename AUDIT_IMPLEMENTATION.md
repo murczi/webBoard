@@ -1,6 +1,6 @@
 # Audit implementation
 
-All 35 tasks from the [baseline audit](CODEBASE_AUDIT.md) are addressed individually on `fix/codebase-audit`. Each task has its own commit and passed a Release solution build, all .NET tests against disposable PostgreSQL, and the JavaScript tests before commit. Form and styling changes also passed real Chromium browser checks; deployment changes passed installer tests. Builds now treat warnings as errors.
+All 35 planned tasks from the [baseline audit](CODEBASE_AUDIT.md) are addressed individually on `fix/codebase-audit`. Each task has its own commit and passed a Release solution build, all .NET tests against disposable PostgreSQL, and the JavaScript tests before commit. Form and styling changes also passed real Chromium browser checks; deployment changes passed installer tests. Builds now treat warnings as errors. A final running-container check uncovered one additional packaging defect, addressed separately as F15: the UI runtime image lacked PostgreSQL's native GSSAPI authentication dependency. CI now runs database migrations from the built UI image to catch this regression.
 
 | Task | Result | Commit |
 | --- | --- | --- |
@@ -38,7 +38,8 @@ All 35 tasks from the [baseline audit](CODEBASE_AUDIT.md) are addressed individu
 | S15 | Generate base-aware browser endpoints and support prefixed deployments | [68b43c7](https://github.com/murczi/webBoard/commit/68b43c7) |
 | S16 | Centralize supported module types and reject unsupported configuration writes | [f3df8fb](https://github.com/murczi/webBoard/commit/f3df8fb) |
 | S17 | Own agent payloads in a shared versioned wire contract | [e45f12b](https://github.com/murczi/webBoard/commit/e45f12b) |
-| S18 | Standardize namespaces, UTF-8 token rules, stable enums, and project conventions | This commit |
+| S18 | Standardize namespaces, UTF-8 token rules, stable enums, and project conventions | [6da4123](https://github.com/murczi/webBoard/commit/6da4123) |
+| F15 | Include PostgreSQL native GSSAPI dependency and verify migrations from the built UI image in CI | This commit |
 
 ## Object-oriented structure
 
@@ -51,10 +52,28 @@ SQL queries, projection expressions, browser event handling, and stateless valid
 - PostgreSQL tests cover populated historical upgrades and rollback preservation, stale writes, revocation, operation replay/locking, monitoring projections, metadata freshness, and configuration invalidation.
 - Browser checks cover registration and secure cookies behind an HTTPS proxy, module create/edit, concurrent forms, permission request races, immediate revocation/deletion, history data, error copy, and light/dark themes. The same suite supports root deployment and `/board` prefix deployment.
 - Agent tests exercise bounded process execution, timeouts, Docker name rediscovery using a mock Unix socket, systemd command construction with a fake runner, request authentication/allowlists, and legacy/current protocol compatibility. They do not execute privileged systemd operations on the host.
-- Installer tests mock privileged/lifecycle commands and validate generated settings. Docker image build and final suite results are recorded after the final verification below.
+- Installer tests mock privileged/lifecycle commands and validate generated settings. The final runtime checks below also exercise both built images.
 
 New forward migrations normalize host uniqueness, preserve operation outcomes, materialize history blocks, standardize UTC timestamps, add stale-edit versions, and separate monitoring freshness from metadata edit versions. The host normalization migration stops with a clear error if historical case-insensitive duplicate names exist; it does not delete or merge hosts. Steam rollback preserves affected configuration in `ModuleRollbackArchive` for manual restoration. The legacy upgrade fixes retain their migration IDs and only affect migrations still pending in an installation.
 
 Existing monitoring results remain available; snapshots predating dedicated monitoring versions are checked again by the collector. Session access now reflects current database grants, so refresh is no longer required to enforce revocation. Unknown module types remain visibly unsupported on reads and are rejected on writes. Agent version 1 preserves the original JSON format and accepts legacy missing version headers.
 
 A history query benchmark on a disposable database with 86,400 identical samples reduced the measured block lookup from roughly 199 ms to 0.034 ms after coalescing to one projected block. This verifies the intended query change for that fixture, not production latency under arbitrary loads.
+
+
+## Final verification — 12 October 2026
+
+| Check | Result |
+| --- | --- |
+| Release solution build | Passed; 0 warnings, 0 errors |
+| .NET tests with disposable PostgreSQL | 215 passed, 0 failed, 0 skipped |
+| JavaScript tests | 7 passed |
+| Installer tests | 58 passed |
+| Chromium browser suite at root | 3 passed |
+| Chromium browser suite under `/board` | 3 passed |
+| EF model/migration consistency | No pending model changes |
+| UI Docker image | Built successfully; fresh database migration, registration, secure session cookie, and static asset checks passed |
+| Agent Docker image | Built successfully; authentication, protocol version 1 health, unsupported-version rejection, and denied control checks passed |
+| Whitespace/conflict-marker checks | Passed |
+
+The checks use disposable databases and containers; no production database migrations or privileged host service actions were performed. The branch contains 36 commits: one for each of the 35 planned tasks and one for F15 discovered during final container verification. The push publishes the feature branch for review; deployment and merging are separate actions.

@@ -56,6 +56,16 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_PASSWORD: webboard-ci-only
+          POSTGRES_DB: webboard_image_smoke
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     strategy:
       matrix:
         component: [ui, agent]
@@ -69,5 +79,13 @@ jobs:
           context: .
           file: deploy/${{ matrix.component }}/Dockerfile
           push: false
+          load: true
+          tags: webboard-ci-${{ matrix.component }}:test
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Verify UI runtime can migrate PostgreSQL
+        if: matrix.component == 'ui'
+        run: >-
+          docker run --rm --network host
+          --env 'ConnectionStrings__WebboardDatabase=Host=localhost;Database=webboard_image_smoke;Username=postgres;Password=webboard-ci-only'
+          webboard-ci-ui:test --migrate
