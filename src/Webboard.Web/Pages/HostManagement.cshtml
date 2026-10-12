@@ -197,7 +197,12 @@
                 auditComment.value = '';
             };
 
+            const requests = new Webboard.LatestRequest();
+            document.getElementById('host-modal').addEventListener('hide.bs.modal', () => requests.cancel());
             const clearResult = () => {
+                requests.cancel();
+                testButton.disabled = false;
+                testButton.textContent = 'Test agent';
                 result.className = 'small mt-2 d-none';
                 result.textContent = '';
             };
@@ -229,9 +234,10 @@
 
             url.addEventListener('input', clearResult);
             testButton.addEventListener('click', async () => {
+                clearResult();
+                const request = requests.begin(url.value);
                 testButton.disabled = true;
                 testButton.textContent = 'Testing…';
-                clearResult();
 
                 const body = new FormData();
                 body.append('agentBaseUrl', url.value);
@@ -239,19 +245,23 @@
                     form.querySelector('input[name="__RequestVerificationToken"]').value);
 
                 try {
-                    const response = await fetch(form.dataset.testUrl, { method: 'POST', body });
+                    const response = await fetch(form.dataset.testUrl, { method: 'POST', body, signal: request.signal });
                     if (!response.ok) throw new Error();
                     const health = await response.json();
+                    if (!requests.isCurrent(request, url.value)) return;
                     result.className = `small mt-2 ${health.healthy ? 'text-success' : 'text-danger'}`;
                     result.textContent = health.message;
                 }
                 catch {
+                    if (!requests.isCurrent(request, url.value)) return;
                     result.className = 'small mt-2 text-danger';
                     result.textContent = 'Health check could not be completed.';
                 }
                 finally {
+                    if (requests.isCurrent(request, url.value)) {
                     testButton.disabled = false;
                     testButton.textContent = 'Test agent';
+                    }
                 }
             });
 

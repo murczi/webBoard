@@ -190,6 +190,9 @@
             const note = document.getElementById('access-note');
             const saveButton = document.getElementById('access-save');
             const auditComment = document.getElementById('access-audit-comment');
+            const requests = new Webboard.LatestRequest();
+            let loadedUserId = null;
+            modalElement.addEventListener('hide.bs.modal', () => { requests.cancel(); loadedUserId = null; saveButton.disabled = true; });
             const resourceLabels = {
                 Users: 'Users',
                 Hosts: 'Hosts',
@@ -253,7 +256,9 @@
 
             document.querySelectorAll('.js-edit-access').forEach(button => {
                 button.addEventListener('click', async () => {
-                    userIdInput.value = button.dataset.userId;
+                    const request = requests.begin(button.dataset.userId);
+                    loadedUserId = null;
+                    userIdInput.value = request.target;
                     userLabel.textContent = button.dataset.userName;
                     loading.classList.remove('d-none');
                     error.classList.add('d-none');
@@ -265,21 +270,24 @@
 
                     try {
                         const response = await fetch(button.dataset.accessUrl, {
-                            headers: { Accept: 'application/json' }
+                            headers: { Accept: 'application/json' }, signal: request.signal
                         });
                         if (!response.ok)
                             throw new Error(`Request failed with status ${response.status}`);
 
-                        renderAccess(await response.json());
+                        const access = await response.json();
+                        if (!requests.isCurrent(request, userIdInput.value)) return;
+                        renderAccess(access);
+                        loadedUserId = request.target;
                         fields.classList.remove('d-none');
                         note.classList.remove('d-none');
                         saveButton.disabled = false;
                     }
                     catch {
-                        error.classList.remove('d-none');
+                        if (requests.isCurrent(request, userIdInput.value)) error.classList.remove('d-none');
                     }
                     finally {
-                        loading.classList.add('d-none');
+                        if (requests.isCurrent(request, userIdInput.value)) loading.classList.add('d-none');
                     }
                 });
             });
@@ -287,6 +295,7 @@
             const retryUserId = @Json.Serialize(Model.RetryUserId);
             if (retryUserId) {
                 userIdInput.value = retryUserId;
+                loadedUserId = String(retryUserId);
                 userLabel.textContent = @Json.Serialize(Model.RetryUserName);
                 renderAccess(@Json.Serialize(Model.Access));
                 auditComment.value = @Json.Serialize(Model.AuditComment);
@@ -297,7 +306,8 @@
                 modal.show();
             }
 
-            form.addEventListener('submit', () => {
+            form.addEventListener('submit', event => {
+                if (loadedUserId !== userIdInput.value) { event.preventDefault(); return; }
                 saveButton.disabled = true;
                 saveButton.textContent = 'Saving…';
             });
