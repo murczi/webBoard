@@ -12,17 +12,20 @@ public sealed class AgentHealthChecker(HttpClient httpClient) : IAgentHealthChec
             return new AgentHealthResult(false, "Enter a valid absolute HTTP or HTTPS agent base URL.");
 
         try {
-            using var response = await httpClient.GetAsync(healthUri, cancellationToken);
+            using var response = await httpClient.GetAsync(healthUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return new AgentHealthResult(false, $"Agent health check returned HTTP {(int)response.StatusCode}.");
 
-            var payload = await response.Content.ReadFromJsonAsync<HealthResponse>(cancellationToken);
+            var payload = await AgentResponseReader.ReadAsync<HealthResponse>(response, cancellationToken, 16384);
             return string.Equals(payload?.Status, "Healthy", StringComparison.OrdinalIgnoreCase)
                 ? new AgentHealthResult(true, "Agent is healthy.")
                 : new AgentHealthResult(false, "Agent did not report a healthy status.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return new AgentHealthResult(false, "Agent health check timed out.");
+        }
+        catch (AgentResponseException) {
+            return new AgentHealthResult(false, "Agent returned an invalid health response.");
         }
         catch (HttpRequestException) {
             return new AgentHealthResult(false, "Agent could not be reached.");

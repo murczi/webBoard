@@ -103,6 +103,18 @@ public sealed class ModuleHealthFeedbackTests {
         Assert.Equal(message, result.Message);
     }
 
+    [Theory]
+    [InlineData("Docker")] [InlineData("Systemd")]
+    public async Task DiscoveryRejectsMalformedAndOversizedBodiesAsTransportErrors(string type) {
+        foreach (var body in new[] { "null", "{", new string(' ', 1048577) }) {
+            using var client = Client(_ => Json(body));
+            await Assert.ThrowsAsync<AgentResponseException>(async () => {
+                if (type == "Docker") await new DockerAgentClient(client).GetContainersAsync("https://agent.test");
+                else await new SystemdAgentClient(client).GetServicesAsync("https://agent.test");
+            });
+        }
+    }
+
     [Fact]
     public async Task MissingConfigurationDoesNotMakeRequests() {
         using var client = Client(_ => throw new InvalidOperationException("Must not make requests"));

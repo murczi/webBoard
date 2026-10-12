@@ -9,8 +9,7 @@ public sealed class AgentOperationsClient(HttpClient client) : IAgentOperationsC
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         ModuleOperationResult? result = null;
         try {
-            await response.Content.LoadIntoBufferAsync(131072, cancellationToken);
-            result = await response.Content.ReadFromJsonAsync<ModuleOperationResult>(cancellationToken);
+            result = await AgentResponseReader.ReadAsync<ModuleOperationResult>(response, cancellationToken, 131072);
         }
         catch (Exception exception) when (exception is System.Text.Json.JsonException or NotSupportedException or HttpRequestException) { }
         var rejected = response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Unauthorized
@@ -34,6 +33,8 @@ public sealed class AgentOperationsClient(HttpClient client) : IAgentOperationsC
     public async Task<IReadOnlyList<string>> GetAllowedOperationsAsync(string baseUrl, string kind, string target, CancellationToken token) {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        return await client.GetFromJsonAsync<List<string>>($"{baseUrl.TrimEnd('/')}/capabilities?kind={Uri.EscapeDataString(kind)}&target={Uri.EscapeDataString(target)}", timeout.Token) ?? [];
+        using var response = await client.GetAsync($"{baseUrl.TrimEnd('/')}/capabilities?kind={Uri.EscapeDataString(kind)}&target={Uri.EscapeDataString(target)}", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        response.EnsureSuccessStatusCode();
+        return await AgentResponseReader.ReadAsync<List<string>>(response, timeout.Token, 16384);
     }
 }

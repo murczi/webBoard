@@ -150,6 +150,9 @@ public class ModuleManagementModel(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return StatusCode(504, new { error = "The Docker container request timed out." });
         }
+        catch (Webboard.Web.Services.AgentResponseException exception) {
+            return StatusCode(502, new { error = exception.Message });
+        }
         catch (HttpRequestException) {
             return StatusCode(502, new { error = "The host agent could not read Docker containers." });
         }
@@ -173,6 +176,9 @@ public class ModuleManagementModel(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return StatusCode(504, new { error = "The systemd service request timed out." });
+        }
+        catch (Webboard.Web.Services.AgentResponseException exception) {
+            return StatusCode(502, new { error = exception.Message });
         }
         catch (HttpRequestException exception) {
             return StatusCode(502, new

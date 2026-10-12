@@ -11,10 +11,9 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         string agentBaseUrl,
         CancellationToken cancellationToken = default) {
         var endpoint = CreateEndpoint(agentBaseUrl, "docker/containers");
-        using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+        using var response = await httpClient.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<List<DockerContainerModel>>(
-            cancellationToken: cancellationToken) ?? [];
+        return await AgentResponseReader.ReadAsync<List<DockerContainerModel>>(response, cancellationToken);
     }
 
     public async Task<ModuleHealthResult> CheckContainerAsync(
@@ -34,7 +33,7 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         var stopwatch = Stopwatch.StartNew();
         var receivedResponse = false;
         try {
-            using var response = await httpClient.GetAsync(endpoint, cancellationToken);
+            using var response = await httpClient.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             receivedResponse = true;
             stopwatch.Stop();
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -48,8 +47,7 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
                     stopwatch.ElapsedMilliseconds,
                     AgentHealthFeedback.ResponseFailure(response.StatusCode, "Docker"));
 
-            var status = await response.Content.ReadFromJsonAsync<DockerContainerStatus>(
-                cancellationToken: cancellationToken);
+            var status = await AgentResponseReader.ReadAsync<DockerContainerStatus>(response, cancellationToken);
             if (status is null || status.IsHealthy is null || string.IsNullOrWhiteSpace(status.Message))
                 return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
             return new ModuleHealthResult(
@@ -59,6 +57,9 @@ public sealed class DockerAgentClient(HttpClient httpClient) : IDockerAgentClien
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Host agent request timed out");
+        }
+        catch (AgentResponseException) {
+            return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, "Invalid agent response");
         }
         catch (HttpRequestException) {
             return new ModuleHealthResult(ModuleHealthState.Unhealthy, null, receivedResponse ? "Could not read the agent response" : "Cannot reach the host agent");
