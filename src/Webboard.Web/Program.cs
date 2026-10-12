@@ -152,6 +152,7 @@ builder.Services.AddAuthorization(options => {
 
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
     Webboard.Web.Security.ReverseProxySecurity.Configure(options, builder.Configuration));
+builder.Services.AddExceptionHandler<Webboard.Web.Services.ResourceExceptionHandler>();
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -160,8 +161,8 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
+app.UseExceptionHandler("/Error");
 if (!app.Environment.IsDevelopment()){
-    app.UseExceptionHandler("/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }

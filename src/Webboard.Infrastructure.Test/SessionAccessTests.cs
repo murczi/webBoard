@@ -13,6 +13,14 @@ internal sealed class PreserveTestClaimsValidator : ISessionAccessValidator {
 
 public sealed class SessionAccessTests {
     [Fact]
+    public void DiagnosticsKeepCauseTypesWithoutCopyingCredentialMessages() {
+        var error = new InvalidOperationException("Password=private-secret", new HttpRequestException("Bearer private-token"));
+        var detail = Web.Services.ExceptionDiagnostics.Describe(error);
+        Assert.Contains("InvalidOperationException", detail); Assert.Contains("HttpRequestException", detail);
+        Assert.DoesNotContain("private-secret", detail); Assert.DoesNotContain("private-token", detail);
+    }
+
+    [Fact]
     public async Task DeletedAccountIsRejectedAndRevokedClaimsAreRemoved() {
         var access = new Access();
         var validator = new SessionAccessValidator(access);

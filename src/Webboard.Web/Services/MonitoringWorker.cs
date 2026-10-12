@@ -20,7 +20,7 @@ public sealed class MonitoringWorker(IServiceScopeFactory scopes, MonitoringOpti
                         await checkScope.ServiceProvider.GetRequiredService<IMonitoringCollector>().CollectAsync(id, token);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-                    catch (Exception exception) { logger.LogWarning("Monitoring persistence failed for module {ModuleId}: {ErrorType}", id, exception.GetType().Name); }
+                    catch (Exception exception) { logger.LogWarning("Monitoring persistence failed for module {ModuleId}: {Diagnostics}", id, ExceptionDiagnostics.Describe(exception)); }
                 });
                 if (timeProvider.GetUtcNow() >= cleanupAt) {
                     await collector.RetainAsync(stoppingToken);
@@ -28,7 +28,7 @@ public sealed class MonitoringWorker(IServiceScopeFactory scopes, MonitoringOpti
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception exception) { logger.LogWarning("Monitoring worker will retry after {ErrorType}", exception.GetType().Name); }
+            catch (Exception exception) { logger.LogWarning("Monitoring worker will retry: {Diagnostics}", ExceptionDiagnostics.Describe(exception)); }
             try { await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, stoppingToken); }
             catch (OperationCanceledException) { break; }
         }

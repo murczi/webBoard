@@ -145,7 +145,7 @@ public class HostManagementModel(IHostManagementService hosts, IAuditLogService 
     }
 
     private void SetValidationError() =>
-        TempData["ErrorMessage"] = "Enter a name and a valid agent base URL.";
+        TempData["ErrorMessage"] = ValidationFeedback.FirstError(ModelState, "Check the host details and try again.");
 
     public class HostInputModel {
         public int Id { get; set; }

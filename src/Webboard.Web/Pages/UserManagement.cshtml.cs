@@ -64,7 +64,7 @@ public class UserManagementModel(
             return Challenge();
         if (!ModelState.IsValid || !IsValidAuditComment()) {
             TempData["ErrorMessage"] =
-                $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.";
+                ValidationFeedback.FirstError(ModelState, $"Enter an audit comment of no more than {AuditLogModel.MaxCommentLength} characters.");
             return await RedisplayAccessAsync(userId, cancellationToken);
         }
 
