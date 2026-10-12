@@ -41,7 +41,7 @@ function fixture(items, fail = false) {
     const source = readFileSync(resolve(__dirname, '../../src/Webboard.Web/wwwroot/js/module-editor.js'), 'utf8');
     // Expose the class only in this isolated test context; skip page bootstrapping.
     vm.runInContext(source.replace("const form = document.getElementById('module-form');", 'globalThis.Editor = ModuleEditor; const form = null;'), context);
-    const editor = new context.Editor(form, {});
+    const editor = new context.Editor(form, { types: { docker: { host: true, remote: 'container' } } });
     return editor.loaders.container;
 }
 const container = (id, name = 'amp-server') => ({ id, name, image: 'amp:latest', status: 'Up' });

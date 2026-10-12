@@ -10,7 +10,7 @@ public sealed class ModuleOperationService(IModuleOperationStore store, IAgentOp
 
     public async Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) {
         if (!ModuleEligibility.CanOperate(module) || module.HostAgentBaseUrl is not { } baseUrl) return [];
-        try { return await agent.GetAllowedOperationsAsync(baseUrl, module.TypeName, module.TypeName == "Docker" ? module.ContainerId! : module.ServiceName!, token); }
+        try { return await agent.GetAllowedOperationsAsync(baseUrl, ModuleTypes.CanonicalName(module.TypeName), ModuleTypes.Is(module.TypeName, ModuleTypes.Docker) ? module.ContainerId! : module.ServiceName!, token); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { return []; }
         catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException) { return []; }
     }
@@ -21,7 +21,7 @@ public sealed class ModuleOperationService(IModuleOperationStore store, IAgentOp
         if (request.Operation is not ("start" or "stop" or "restart" or "enable" or "disable")) throw new ArgumentException("Unsupported operation.");
         var module = await store.FindTargetAsync(request.ModuleId, cancellationToken);
         if (module is null || !ModuleEligibility.CanOperate(module)) throw new ArgumentException("Operation module or host is missing or disabled.");
-        if (module.TypeName == "Docker" && request.Operation is "enable" or "disable") throw new ArgumentException("Operation is not available for this module.");
+        if (ModuleTypes.Is(module.TypeName, ModuleTypes.Docker) && request.Operation is "enable" or "disable") throw new ArgumentException("Operation is not available for this module.");
         var reserved = await store.ReserveAsync(actorId, request, module, timeProvider.GetUtcNow(), cancellationToken);
         if (!reserved.Created) return reserved.Result;
         ModuleOperationResult result;
@@ -31,8 +31,8 @@ public sealed class ModuleOperationService(IModuleOperationStore store, IAgentOp
             if (lease is null) result = new(false, "Another operation is running on this host.") { Outcome = OperationOutcome.Rejected, FailureReason = OperationFailureReason.Busy };
             else {
                 dispatched = true;
-                result = await agent.ExecuteAsync(module.HostAgentBaseUrl!, request.RequestId, module.Id, module.TypeName,
-                    module.TypeName == "Docker" ? module.ContainerId! : module.ServiceName!, request.Operation, cancellationToken);
+                result = await agent.ExecuteAsync(module.HostAgentBaseUrl!, request.RequestId, module.Id, ModuleTypes.CanonicalName(module.TypeName),
+                    ModuleTypes.Is(module.TypeName, ModuleTypes.Docker) ? module.ContainerId! : module.ServiceName!, request.Operation, cancellationToken);
             }
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or OperationStoreException) {

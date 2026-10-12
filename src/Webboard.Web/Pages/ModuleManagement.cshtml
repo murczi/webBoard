@@ -215,6 +215,7 @@
     <script src="~/js/operations.js" asp-append-version="true"></script>
     <script src="~/js/module-order.js" asp-append-version="true"></script>
     <script type="application/json" id="module-editor-state">@Json.Serialize(new {
+        types = Webboard.Domain.Model.Modules.ModuleTypes.All.ToDictionary(type => type.Name.ToLowerInvariant()),
         retry = Model.ReopenHandler,
         auditComment = Model.AuditComment,
         containerId = Model.Module.ContainerId,

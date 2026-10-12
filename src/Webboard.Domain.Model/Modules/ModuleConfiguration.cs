@@ -18,14 +18,14 @@ public abstract class ModuleConfiguration {
 }
 public sealed class HttpConfiguration : ModuleConfiguration {
     private HttpConfiguration(int? hostId, string? url) { HostId = hostId; HealthCheckUrl = url; }
-    public override string TypeName => "Http";
+    public override string TypeName => ModuleTypes.Http;
     public override int? HostId { get; }
     public string? HealthCheckUrl { get; }
     public static HttpConfiguration Create(int? hostId, string? url) => new(hostId, WebUrl.NormalizeOptional(url, "Health-check URL"));
 }
 public sealed class DockerConfiguration : ModuleConfiguration {
     private DockerConfiguration(int hostId, string container) { HostId = hostId; Container = container; }
-    public override string TypeName => "Docker";
+    public override string TypeName => ModuleTypes.Docker;
     public override int? HostId { get; }
     public string Container { get; }
     public static DockerConfiguration Create(int? hostId, string? container) {
@@ -36,7 +36,7 @@ public sealed class DockerConfiguration : ModuleConfiguration {
 }
 public sealed class SystemdConfiguration : ModuleConfiguration {
     private SystemdConfiguration(int hostId, string service) { HostId = hostId; ServiceName = service; }
-    public override string TypeName => "Systemd";
+    public override string TypeName => ModuleTypes.Systemd;
     public override int? HostId { get; }
     public string ServiceName { get; }
     public static SystemdConfiguration Create(int? hostId, string? service) {
@@ -57,13 +57,13 @@ public sealed class ServerEndpoint {
 }
 public sealed class MinecraftConfiguration : ModuleConfiguration {
     private MinecraftConfiguration(ServerEndpoint endpoint) => Endpoint = endpoint;
-    public override string TypeName => "Minecraft";
+    public override string TypeName => ModuleTypes.Minecraft;
     public ServerEndpoint Endpoint { get; }
     public static MinecraftConfiguration Create(string? address, int? port) => new(ServerEndpoint.Create(address, port, "Minecraft"));
 }
 public sealed class SteamConfiguration : ModuleConfiguration {
     private SteamConfiguration(ServerEndpoint endpoint, bool players) { Endpoint = endpoint; QueryPlayers = players; }
-    public override string TypeName => "Steam";
+    public override string TypeName => ModuleTypes.Steam;
     public ServerEndpoint Endpoint { get; }
     public bool QueryPlayers { get; }
     public static SteamConfiguration Create(string? address, int? port, bool players) => new(ServerEndpoint.Create(address, port, "Steam"), players);

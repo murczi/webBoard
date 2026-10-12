@@ -12,6 +12,18 @@ public class ModuleManagementServiceTests {
         await Assert.ThrowsAsync<ArgumentException>(() => service.AddAsync(new ModuleModel { Name = "Steam", TypeId = 5, SteamServerAddress = "game.example.test", SteamQueryPort = port }, 1, "Created"));
     }
     [Fact]
+    public void UnregisteredTypesAreRejectedAndKnownTypesUseConsistentCaseSemantics() {
+        var registry = new ModuleConfigurationRegistry();
+        Assert.Throws<ArgumentException>(() => registry.Create("Custom", new ModuleModel { Name = "Custom" }));
+        var configuration = registry.Create("dOcKeR", new ModuleModel { Name = "Sample", HostId = 1, ContainerId = "sample" });
+        Assert.Equal(ModuleTypes.Docker, configuration.TypeName);
+        Assert.True(ModuleEligibility.CanOperate(new ModuleModel { Name = "Sample", TypeName = "dOcKeR", HostId = 1,
+            HostExists = true, HostIsEnabled = true, HostAgentBaseUrl = "https://agent.test", ContainerId = "sample", IsEnabled = true }));
+        Assert.True(ModuleTypes.Find("SYSTEMD")!.SupportsOperations);
+        Assert.Null(ModuleTypes.Find("Custom"));
+    }
+
+    [Fact]
     public async Task SteamClearsOtherTypeConfigurationAndDoesNotRequireAHost() {
         var service = new ModuleManagementService(new FakeModuleRepository { ValidTypeId = 5, ValidTypeName = "Steam" });
         var module = await service.AddAsync(new ModuleModel { Name = "Steam", TypeId = 5, HostId = 999,

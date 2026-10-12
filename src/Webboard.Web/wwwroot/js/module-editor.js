@@ -5,12 +5,7 @@
     class ModuleTypeConfiguration {
         constructor(editor) {
             this.editor = editor;
-            this.definitions = {
-                docker: { host: true, remote: 'container' },
-                systemd: { host: true, remote: 'service' },
-                minecraft: { server: 'minecraft' },
-                steam: { server: 'steam' }
-            };
+            this.definitions = editor.types;
             this.groups = {
                 health: ['HealthCheckUrl'],
                 container: ['ContainerId'],
@@ -23,7 +18,7 @@
         apply() {
             const { editor } = this;
             const kind = editor.input('TypeId').selectedOptions[0]?.dataset.typeName?.toLowerCase();
-            const definition = this.definitions[kind] || { host: true, health: true };
+            const definition = this.definitions[kind] || {};
             this.current = definition;
             const host = editor.input('HostId');
             host.disabled = !definition.host;
@@ -138,6 +133,7 @@
     class ModuleEditor {
         constructor(form, state) {
             this.form = form;
+            this.types = state.types;
             this.modal = form.closest('.modal');
             this.save = document.getElementById('save-module');
             this.loaders = {

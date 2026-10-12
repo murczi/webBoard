@@ -8,6 +8,7 @@ using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
 public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
+    private static readonly string[] SupportedTypeNames = ModuleTypes.All.Select(x => x.Name.ToLowerInvariant()).ToArray();
     private readonly TimeProvider timeProvider = TimeProvider.System;
     public ModuleRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
 
@@ -27,6 +28,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
 
     public async Task<IReadOnlyList<ModuleOptionModel>> GetTypesAsync(CancellationToken cancellationToken = default) =>
         await dbContext.ModuleTypes.AsNoTracking()
+            .Where(type => SupportedTypeNames.Contains(type.Name.ToLower()))
             .OrderBy(type => type.Name)
             .Select(type => new ModuleOptionModel(type.Id, type.Name))
             .ToListAsync(cancellationToken);

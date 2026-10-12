@@ -72,7 +72,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         var lifecycleChanged = current.IsEnabled != host.IsEnabled;
         var endpointChanged = current.AgentBaseUrl != host.AgentBaseUrl;
         var dependentModules = await dbContext.Modules.Where(x => x.HostId == host.Id && !x.DeletionFlag &&
-            (lifecycleChanged || (endpointChanged && x.Type != null && (x.Type.Name == "Docker" || x.Type.Name == "Systemd"))))
+            (lifecycleChanged || (endpointChanged && x.Type != null && (x.Type.Name.ToLower() == "docker" || x.Type.Name.ToLower() == "systemd"))))
             .Select(x => x.Id).ToListAsync(cancellationToken);
         await MonitoringInvalidation.LockAsync(dbContext, dependentModules, cancellationToken);
         var updated = await TranslateNameConflictAsync(async () => await dbContext.Hosts

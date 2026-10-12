@@ -7,6 +7,6 @@ public static class ModuleEligibility {
         !hostEnabled ? "Monitoring paused: host is disabled" : null;
     public static bool CanOperate(ModuleModel module) => module.HostId.HasValue && module.HostAgentBaseUrl is not null &&
         UnavailableReason(module.IsEnabled, module.HostId, module.HostExists, module.HostIsEnabled, module.HostIsDeleted) is null &&
-        (module.TypeName == "Docker" && !string.IsNullOrWhiteSpace(module.ContainerId) ||
-         module.TypeName == "Systemd" && !string.IsNullOrWhiteSpace(module.ServiceName));
+        (ModuleTypes.Is(module.TypeName, ModuleTypes.Docker) && !string.IsNullOrWhiteSpace(module.ContainerId) ||
+         ModuleTypes.Is(module.TypeName, ModuleTypes.Systemd) && !string.IsNullOrWhiteSpace(module.ServiceName));
 }
