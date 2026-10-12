@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "User management";
     ViewData["FullWidth"] = true;
+    var resourceMetadata = Webboard.Domain.Model.UserCrudAccess.PermissionResources.All.ToDictionary(x => x.Key);
 }
 
 <div class="mode-bar"><a asp-page="/Users">← Back to users</a><span class="mode-badge">Management</span></div>
@@ -193,13 +194,7 @@
             const requests = new Webboard.LatestRequest();
             let loadedUserId = null;
             modalElement.addEventListener('hide.bs.modal', () => { requests.cancel(); loadedUserId = null; saveButton.disabled = true; });
-            const resourceLabels = {
-                Users: 'Users',
-                Hosts: 'Hosts',
-                Modules: 'Modules',
-                ModuleTypes: 'Module types',
-                AuditLogs: 'Audit logs'
-            };
+            const resourceMetadata = @Json.Serialize(resourceMetadata);
 
             const addHiddenInput = (container, name, value) => {
                 const input = document.createElement('input');
@@ -230,7 +225,7 @@
                 rows.replaceChildren();
                 access.forEach((item, index) => {
                     const row = document.createElement('tr');
-                    row.dataset.resource = resourceLabels[item.resource] ?? item.resource;
+                    row.dataset.resource = resourceMetadata[item.resource]?.label ?? item.resource;
 
                     const resourceCell = document.createElement('th');
                     resourceCell.scope = 'row';
@@ -242,7 +237,7 @@
                     addAccessCheckbox(row, index, 'CanRead', item.canRead, false);
                     addAccessCheckbox(row, index, 'CanUpdate', item.canUpdate, item.isReadOnlyResource);
                     addAccessCheckbox(row, index, 'CanDelete', item.canDelete, item.isReadOnlyResource);
-                    addAccessCheckbox(row, index, 'CanOperate', item.canOperate, item.resource !== 'Modules');
+                    addAccessCheckbox(row, index, 'CanOperate', item.canOperate, !resourceMetadata[item.resource]?.supportsOperations);
                     const read = row.querySelector(`[name="Access[${index}].CanRead"]`);
                     const writes = [...row.querySelectorAll('input[type="checkbox"]')].filter(input => input !== read);
                     const ensureRead = () => {
