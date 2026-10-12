@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClient agent) : IModuleOperations {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public ModuleOperations(WebboardDbContext db, IAgentOperationsClient agent, TimeProvider timeProvider) : this(db, agent) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<string>> AllowedServiceOperationsAsync(ModuleModel module, CancellationToken token) {
         if (!ModuleEligibility.CanOperate(module) || module.HostAgentBaseUrl is not { } baseUrl) return [];
         try { return await agent.GetAllowedOperationsAsync(baseUrl, module.TypeName, module.TypeName == "Docker" ? module.ContainerId ?? "" : module.ServiceName ?? "", token); }
@@ -33,7 +36,7 @@ public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClien
         if (existing is not null) return Previous(existing, actorId, module.Id, request.Operation);
         var audit = new AuditLogEntity {
             ActorId = actorId, Actor = null!, ModuleId = module.Id, HostId = host.Id,
-            DateCreated = DateTime.UtcNow, Comment = "Requested module operation.",
+            DateCreated = timeProvider.GetUtcNow(), Comment = "Requested module operation.",
             Action = AuditAction.ServiceControl,
             OperationId = request.RequestId, Operation = request.Operation, Outcome = "Pending",
             TargetSnapshot = $"{module.FriendlyName} / {host.Name} / {target}"[..Math.Min(300, $"{module.FriendlyName} / {host.Name} / {target}".Length)]
@@ -71,7 +74,7 @@ public sealed class ModuleOperations(WebboardDbContext db, IAgentOperationsClien
         audit.ExitCode = result.ExitCode;
         audit.Output = result.Output is { Length: > 16384 } ? result.Output[..16384] : result.Output;
         audit.Failure = result.Success ? null : result.Message[..Math.Min(result.Message.Length, 1000)];
-        audit.CompletedAt = DateTimeOffset.UtcNow;
+        audit.CompletedAt = timeProvider.GetUtcNow();
         await db.SaveChangesAsync(CancellationToken.None);
         return result;
     }

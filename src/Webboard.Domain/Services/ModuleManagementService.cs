@@ -6,6 +6,8 @@ using Model.Modules;
 
 public class ModuleManagementService(IModuleRepository repository) : IModuleManagementService {
     private readonly ModuleConfigurationRegistry configurations = new();
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public ModuleManagementService(IModuleRepository repository, ModuleConfigurationRegistry configurations, TimeProvider timeProvider) : this(repository, configurations) => this.timeProvider = timeProvider;
     public ModuleManagementService(IModuleRepository repository, ModuleConfigurationRegistry configurations) : this(repository) => this.configurations = configurations;
     public Task<IReadOnlyList<ModuleModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         repository.GetAllAsync(cancellationToken);
@@ -23,7 +25,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         module.DateCreated = now;
         module.DateUpdated = now;
         await repository.AddAsync(module, actorId, auditComment, cancellationToken);
@@ -37,7 +39,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
         CancellationToken cancellationToken = default) {
         await ValidateAndNormalizeAsync(module, cancellationToken);
         auditComment = AuditComment.Normalize(auditComment);
-        module.DateUpdated = DateTimeOffset.UtcNow;
+        module.DateUpdated = timeProvider.GetUtcNow();
         return await repository.UpdateAsync(module, actorId, auditComment, cancellationToken);
     }
 

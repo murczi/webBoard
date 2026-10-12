@@ -17,3 +17,8 @@ document.querySelectorAll('.table-responsive [data-bs-toggle="dropdown"], .user-
         popperConfig: defaults => ({ ...defaults, strategy: 'fixed' })
     });
 });
+
+document.querySelectorAll('time[data-local-date]').forEach(time => {
+    const date = new Date(time.dateTime);
+    if (!Number.isNaN(date.getTime())) time.textContent = date.toLocaleDateString();
+});

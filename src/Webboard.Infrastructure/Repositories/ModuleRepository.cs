@@ -7,6 +7,9 @@ using Domain.Model.Modules;
 using Microsoft.EntityFrameworkCore;
 
 public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public ModuleRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<ModuleModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Modules.AsNoTracking()
             .Where(module => !module.DeletionFlag)
@@ -91,7 +94,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
-            DateCreated = DateTime.UtcNow,
+            DateCreated = timeProvider.GetUtcNow(),
             Module = entity,
             Actor = null!
         });
@@ -129,7 +132,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         if (!updated)
             return false;
 
-        await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], cancellationToken);
+        await MonitoringInvalidation.InvalidateAsync(dbContext, [module.Id], timeProvider, cancellationToken);
         AddAuditLog(module.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -149,12 +152,12 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
                 setters => setters
                     .SetProperty(module => module.DeletionFlag, true)
                     .SetProperty(module => module.IsEnabled, false)
-                    .SetProperty(module => module.DateUpdated, DateTimeOffset.UtcNow),
+                    .SetProperty(module => module.DateUpdated, timeProvider.GetUtcNow()),
                 cancellationToken) > 0;
         if (!deleted)
             return false;
 
-        await MonitoringInvalidation.InvalidateAsync(dbContext, [moduleId], cancellationToken);
+        await MonitoringInvalidation.InvalidateAsync(dbContext, [moduleId], timeProvider, cancellationToken);
         AddAuditLog(moduleId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -167,7 +170,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
             ActorId = actorId,
             Action = action,
             Comment = comment,
-            DateCreated = DateTime.UtcNow,
+            DateCreated = timeProvider.GetUtcNow(),
             ModuleId = moduleId,
             Actor = null!
         });

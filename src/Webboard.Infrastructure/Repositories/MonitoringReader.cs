@@ -8,6 +8,9 @@ using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
 public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions options) : IMonitoringReader {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public MonitoringReader(WebboardDbContext db, MonitoringOptions options, TimeProvider timeProvider) : this(db, options) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<HistoryModule>> ModulesAsync(CancellationToken token) =>
         await db.Modules.AsNoTracking().Where(x => !x.DeletionFlag).OrderBy(x => x.FriendlyName)
             .Select(x => new HistoryModule(x.Id, x.FriendlyName, x.IsEnabled)).ToListAsync(token);
@@ -17,7 +20,7 @@ public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions opt
                           join latest in db.LatestMonitoring.AsNoTracking() on module.Id equals latest.ModuleId into results
                           from latest in results.DefaultIfEmpty()
                           select new { module.Id, module.HostId, HostExists = module.Host != null, HostEnabled = module.Host != null && module.Host.IsEnabled, HostDeleted = module.Host != null && module.Host.DeletionFlag, Latest = latest }).ToListAsync(token);
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         return rows.Select(row => {
             var latest = row.Latest;
             var unavailable = ModuleEligibility.UnavailableReason(true, row.HostId, row.HostExists, row.HostEnabled, row.HostDeleted);
@@ -35,9 +38,9 @@ public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions opt
     public async Task<MonitoringBlock> BlockAsync(int moduleId, DateTimeOffset at, CancellationToken token) {
         if (!await db.Modules.AnyAsync(x => x.Id == moduleId && !x.DeletionFlag, token)) throw new KeyNotFoundException();
         at = at.ToUniversalTime();
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-options.RetentionDays);
+        var cutoff = timeProvider.GetUtcNow().AddDays(-options.RetentionDays);
         if (at < cutoff) return new(at, cutoff, ModuleHealthState.Unknown, "Outside retained history");
-        var end = DateTimeOffset.UtcNow;
+        var end = timeProvider.GetUtcNow();
         if (at >= end) return new(end, at.AddSeconds(1), ModuleHealthState.Unknown, "No monitoring data");
         var previous = await db.MonitoringBlocks.AsNoTracking().Where(x => x.ModuleId == moduleId && x.Start <= at)
             .OrderByDescending(x => x.Start).ThenByDescending(x => x.Id).FirstOrDefaultAsync(token);
@@ -53,11 +56,11 @@ public sealed class MonitoringReader(WebboardDbContext db, MonitoringOptions opt
         from = from.ToUniversalTime(); until = until.ToUniversalTime();
         if (until <= from || until - from > TimeSpan.FromDays(3660)) throw new ArgumentException("Select a valid time range of at most ten years.");
         if (!await db.Modules.AnyAsync(x => x.Id == moduleId && !x.DeletionFlag, token)) throw new KeyNotFoundException();
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-options.RetentionDays);
+        var cutoff = timeProvider.GetUtcNow().AddDays(-options.RetentionDays);
         if (until <= cutoff) return new(moduleId, from, until, [new(from, until, ModuleHealthState.Unknown, "Outside retained history")], null);
         var sliceEnd = until < from.AddDays(1) ? until : from.AddDays(1);
         if (sliceEnd < cutoff && cutoff < until) sliceEnd = cutoff;
-        if (from > DateTimeOffset.UtcNow) sliceEnd = until;
+        if (from > timeProvider.GetUtcNow()) sliceEnd = until;
         var queryStart = from > cutoff ? from : cutoff;
         var spans = new List<HistorySpan>();
         if (sliceEnd > queryStart) {

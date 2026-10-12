@@ -69,7 +69,7 @@
                                 @(host.IsEnabled ? "Enabled" : "Disabled")
                             </span>
                         </td>
-                        <td class="text-muted">@host.DateCreated.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                        <td class="text-muted"><time data-local-date datetime="@host.DateCreated.ToString("O")">@host.DateCreated.UtcDateTime.ToString("yyyy-MM-dd") UTC</time></td>
                         <td class="text-end">
                             @if (Model.CanUpdate || Model.CanDelete || Model.CanReadLogs) {
                                 <div class="dropdown">

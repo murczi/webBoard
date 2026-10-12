@@ -20,7 +20,7 @@ public class AuditLogEntity {
 
     public required string Comment { get; set; }
 
-    public DateTime DateCreated { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
     public int? ModuleId { get; set; }
 

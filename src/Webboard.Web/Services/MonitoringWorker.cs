@@ -3,6 +3,9 @@ using Domain.Interfaces.Services;
 using Domain.Model.Monitoring;
 
 public sealed class MonitoringWorker(IServiceScopeFactory scopes, MonitoringOptions options, ILogger<MonitoringWorker> logger) : BackgroundService {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public MonitoringWorker(IServiceScopeFactory scopes, MonitoringOptions options, ILogger<MonitoringWorker> logger, TimeProvider timeProvider) : this(scopes, options, logger) => this.timeProvider = timeProvider;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
         if (!options.Enabled) return;
         var cleanupAt = DateTimeOffset.MinValue;
@@ -19,14 +22,14 @@ public sealed class MonitoringWorker(IServiceScopeFactory scopes, MonitoringOpti
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { }
                     catch (Exception exception) { logger.LogWarning("Monitoring persistence failed for module {ModuleId}: {ErrorType}", id, exception.GetType().Name); }
                 });
-                if (DateTimeOffset.UtcNow >= cleanupAt) {
+                if (timeProvider.GetUtcNow() >= cleanupAt) {
                     await collector.RetainAsync(stoppingToken);
-                    cleanupAt = DateTimeOffset.UtcNow.AddHours(1);
+                    cleanupAt = timeProvider.GetUtcNow().AddHours(1);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception) { logger.LogWarning("Monitoring worker will retry after {ErrorType}", exception.GetType().Name); }
-            try { await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); }
+            try { await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
     }

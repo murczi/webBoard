@@ -7,8 +7,8 @@ public sealed record AuditLogQuery {
     public AuditAction? Action { get; init; }
     public int? ActorId { get; init; }
     public int? TargetId { get; init; }
-    public DateTime? FromUtc { get; init; }
-    public DateTime? UntilUtc { get; init; }
+    public DateTimeOffset? FromUtc { get; init; }
+    public DateTimeOffset? UntilUtc { get; init; }
     public int Page { get; init; } = 1;
 }
 

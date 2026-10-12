@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 
 public class UserCrudAccessRepository(WebboardDbContext dbContext)
     : IUserCrudAccessRepository {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public UserCrudAccessRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<UserSummaryModel>> GetUsersAsync(
         CancellationToken cancellationToken = default) =>
         await dbContext.Users
@@ -39,7 +42,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(user => user.DeletionFlag, true)
-                    .SetProperty(user => user.DateUpdated, DateTime.UtcNow),
+                    .SetProperty(user => user.DateUpdated, timeProvider.GetUtcNow()),
                 cancellationToken) > 0;
         if (!deleted)
             return false;
@@ -47,7 +50,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
         dbContext.AuditLogs.Add(new AuditLogEntity {
             ActorId = actorId, UserId = userId, Comment = auditComment,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Delete,
-            DateCreated = DateTime.UtcNow, Actor = null!
+            DateCreated = timeProvider.GetUtcNow(), Actor = null!
         });
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -91,7 +94,7 @@ public class UserCrudAccessRepository(WebboardDbContext dbContext)
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.PermissionsChanged,
             Comment = auditComment,
-            DateCreated = DateTime.UtcNow,
+            DateCreated = timeProvider.GetUtcNow(),
             UserId = userId,
             Actor = null!
         });

@@ -7,10 +7,10 @@ public static class MonitoringInvalidation {
         foreach (var id in moduleIds.Order())
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(70111, {id})", token);
     }
-    public static async Task InvalidateAsync(WebboardDbContext db, IEnumerable<int> moduleIds, CancellationToken token) {
+    public static async Task InvalidateAsync(WebboardDbContext db, IEnumerable<int> moduleIds, TimeProvider timeProvider, CancellationToken token) {
         var ids = moduleIds.ToArray();
         await db.LatestMonitoring.Where(x => ids.Contains(x.ModuleId)).ExecuteDeleteAsync(token);
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         await MonitoringBlockProjection.CutAsync(db, ids, now, token);
         foreach (var id in ids) db.MonitoringResults.Add(new() {
             ModuleId = id, Timestamp = now, FreshUntil = now, ConfigurationRevision = now,

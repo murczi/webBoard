@@ -6,6 +6,9 @@ using Model.Hosts;
 
 public class HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker)
     : IHostManagementService {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public HostManagementService(IHostRepository repository, IAgentHealthChecker healthChecker, TimeProvider timeProvider) : this(repository, healthChecker) => this.timeProvider = timeProvider;
+
     public Task<IReadOnlyList<HostModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         repository.GetAllAsync(cancellationToken);
 
@@ -23,7 +26,7 @@ public class HostManagementService(IHostRepository repository, IAgentHealthCheck
             throw new ArgumentException("A host with this name already exists.", nameof(host));
 
         if (host.IsEnabled) await RequireHealthyAgentAsync(host.AgentBaseUrl, cancellationToken);
-        host.DateCreated = DateTime.UtcNow;
+        host.DateCreated = timeProvider.GetUtcNow();
         await repository.AddAsync(host, actorId, auditComment, cancellationToken);
         return host;
     }

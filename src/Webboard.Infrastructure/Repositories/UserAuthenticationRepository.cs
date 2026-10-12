@@ -10,6 +10,9 @@ using Npgsql;
 
 public class UserAuthenticationRepository(WebboardDbContext dbContext)
     : IUserAuthenticationRepository {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public UserAuthenticationRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
+
     public async Task<UserLoginModel?> FindByNameAsync(
         string name,
         CancellationToken cancellationToken = default) {
@@ -64,7 +67,7 @@ public class UserAuthenticationRepository(WebboardDbContext dbContext)
         if (await UserNameExistsAsync(name, cancellationToken))
             return false;
 
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var entity = new UserEntity
         {
             Name = name,

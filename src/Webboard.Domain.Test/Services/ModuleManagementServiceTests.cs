@@ -258,6 +258,15 @@ public class ModuleManagementServiceTests {
     public void SystemdNamesFollowTheAgentAndInstallerContract(string name, bool valid) => Assert.Equal(valid, SystemdUnitName.IsValid(name));
 
     [Fact]
+    public async Task CreationUsesTheInjectedUtcClock() {
+        var now = new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
+        var service = new ModuleManagementService(new FakeModuleRepository(), new ModuleConfigurationRegistry(), new FixedTime(now));
+        var module = await service.AddAsync(NewModule(), 1, "Create");
+        Assert.Equal(now, module.DateCreated); Assert.Equal(now, module.DateUpdated);
+    }
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+
+    [Fact]
     public void ValidatedConfigurationOwnsItsInvariantsAndClearsInactiveFields() {
         Assert.Throws<ArgumentException>(() => MinecraftConfiguration.Create("mc.test", null));
         Assert.Throws<ArgumentException>(() => DockerConfiguration.Create(null, "container"));

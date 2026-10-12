@@ -13,7 +13,7 @@ public class HostEntity {
 
     public bool IsEnabled { get; set; }
 
-    public DateTime DateCreated { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
     public ICollection<AuditLogEntity> AuditLogs { get; set; }
         = new List<AuditLogEntity>();

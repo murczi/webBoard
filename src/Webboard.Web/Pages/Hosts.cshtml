@@ -16,7 +16,7 @@
         <article class="card resource-card"><div class="card-body">
             <div class="d-flex justify-content-between gap-2"><h2 class="h5 text-break">@host.Name</h2><span class="badge @(host.IsEnabled ? "text-bg-success" : "text-bg-secondary") align-self-start">@(host.IsEnabled ? "Enabled" : "Disabled")</span></div>
             <p class="text-muted text-break mt-3">@host.AgentBaseUrl</p>
-            <div class="d-flex justify-content-between align-items-center gap-2"><small class="text-muted">Added @host.DateCreated.ToLocalTime().ToString("yyyy-MM-dd")</small>
+            <div class="d-flex justify-content-between align-items-center gap-2"><small class="text-muted">Added <time data-local-date datetime="@host.DateCreated.ToString("O")">@host.DateCreated.UtcDateTime.ToString("yyyy-MM-dd") UTC</time></small>
             @if (Model.CanReadLogs) { <a asp-page="/AuditLogs" asp-route-Resource="Hosts" asp-route-TargetId="@host.Id">History →</a> }</div>
         </div></article>
     }

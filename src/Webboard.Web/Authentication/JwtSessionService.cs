@@ -14,6 +14,11 @@ using Microsoft.IdentityModel.Tokens;
 public sealed class JwtSessionService(
     IUserAuthenticationRepository users,
     IOptions<JwtOptions> options) {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public JwtSessionService(
+    IUserAuthenticationRepository users,
+    IOptions<JwtOptions> options, TimeProvider timeProvider) : this(users, options) => this.timeProvider = timeProvider;
+
     public const string AccessClaimType = "access";
     public const string RememberMeClaimType = "remember_me";
 
@@ -48,7 +53,7 @@ public sealed class JwtSessionService(
     }
 
     private string CreateToken(UserLoginModel user, bool rememberMe) {
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
@@ -111,7 +116,7 @@ public sealed class JwtSessionService(
         if (rememberMe) {
             var lifetime = GetLifetime(true);
             options.MaxAge = lifetime;
-            options.Expires = DateTimeOffset.UtcNow.Add(lifetime);
+            options.Expires = timeProvider.GetUtcNow().Add(lifetime);
         }
 
         return options;

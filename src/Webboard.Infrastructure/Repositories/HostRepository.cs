@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
+    private readonly TimeProvider timeProvider = TimeProvider.System;
+    public HostRepository(WebboardDbContext dbContext, TimeProvider timeProvider) : this(dbContext) => this.timeProvider = timeProvider;
+
     public async Task<IReadOnlyList<HostModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Hosts.AsNoTracking()
             .Where(host => !host.DeletionFlag)
@@ -49,7 +52,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             ActorId = actorId,
             Action = Webboard.Domain.Model.AuditLogs.AuditAction.Create,
             Comment = auditComment,
-            DateCreated = DateTime.UtcNow,
+            DateCreated = timeProvider.GetUtcNow(),
             Host = entity,
             Actor = null!
         });
@@ -76,7 +79,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!updated)
             return false;
 
-        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
+        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, timeProvider, cancellationToken);
         AddAuditLog(host.Id, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Update);
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
@@ -101,7 +104,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
         if (!deleted)
             return false;
 
-        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, cancellationToken);
+        await MonitoringInvalidation.InvalidateAsync(dbContext, dependentModules, timeProvider, cancellationToken);
         AddAuditLog(hostId, actorId, auditComment, Webboard.Domain.Model.AuditLogs.AuditAction.Delete);
         await TranslateNameConflictAsync(async () => await dbContext.SaveChangesAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
@@ -125,7 +128,7 @@ public class HostRepository(WebboardDbContext dbContext) : IHostRepository {
             ActorId = actorId,
             Action = action,
             Comment = comment,
-            DateCreated = DateTime.UtcNow,
+            DateCreated = timeProvider.GetUtcNow(),
             HostId = hostId,
             Actor = null!
         });

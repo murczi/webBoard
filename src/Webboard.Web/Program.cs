@@ -37,6 +37,7 @@ Webboard.Web.Security.OutboundSecurityValidation.Validate(builder.Configuration)
 var monitoringOptions = builder.Configuration.GetSection("Monitoring").Get<Webboard.Domain.Model.Monitoring.MonitoringOptions>() ?? new();
 monitoringOptions.Validate();
 builder.Services.AddSingleton(monitoringOptions);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IMonitoringCollector, MonitoringCollector>();
 builder.Services.AddScoped<IMonitoringReader, MonitoringReader>();
 builder.Services.AddHostedService<Webboard.Web.Services.MonitoringWorker>();
