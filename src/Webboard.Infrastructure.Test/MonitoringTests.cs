@@ -32,6 +32,16 @@ public sealed class MonitoringTests : IAsyncLifetime {
     }
     private WebboardDbContext Context() => new(new DbContextOptionsBuilder<WebboardDbContext>().UseNpgsql(connectionString).Options);
     [PostgresFact]
+    public async Task RepositoryAndCollectorShareConfigurationAndMetadataProjection() {
+        await using var db = Context();
+        await db.Modules.ExecuteUpdateAsync(s => s.SetProperty(x => x.Description, "Description").SetProperty(x => x.ManagementUrl, "https://management.test"));
+        var expected = Assert.Single(await new ModuleRepository(db).GetAllAsync()); var checker = new FakeChecker();
+        await new MonitoringCollector(db, checker, options).CollectAsync(moduleId, default);
+        Assert.Equal(expected.Description, checker.Last!.Description); Assert.Equal(expected.ManagementUrl, checker.Last.ManagementUrl);
+        Assert.Equal(expected.ContainerId, checker.Last.ContainerId); Assert.Equal(expected.HostIsEnabled, checker.Last.HostIsEnabled);
+    }
+
+    [PostgresFact]
     public async Task RangeCrossingRetentionUsesTheSameExplanationAsBlockLookup() {
         await using var db = Context(); var reader = new MonitoringReader(db, options);
         var start = DateTimeOffset.UtcNow.AddDays(-31);
@@ -185,7 +195,9 @@ public sealed class MonitoringTests : IAsyncLifetime {
         new() { ModuleId = moduleId, Timestamp = at, FreshUntil = until, ConfigurationRevision = at, State = state, Message = message };
     private sealed class FakeChecker(Func<CancellationToken, Task>? wait = null) : IModuleHealthChecker {
         public int Calls;
+        public ModuleModel? Last;
         public async Task<ModuleHealthResult> CheckAsync(ModuleModel module, CancellationToken cancellationToken = default) {
+            Last = module;
             Interlocked.Increment(ref Calls); if (wait is not null) await wait(cancellationToken);
             return new(ModuleHealthState.Healthy, 3, "OK");
         }

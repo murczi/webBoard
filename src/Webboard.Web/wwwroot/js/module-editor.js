@@ -156,7 +156,7 @@
             this.configuration = new ModuleTypeConfiguration(this);
             document.querySelector('[data-module-action="add"]')?.addEventListener('click', () => this.open());
             document.querySelectorAll('.js-edit-module').forEach(button =>
-                button.addEventListener('click', () => this.open(button.dataset)));
+                button.addEventListener('click', () => this.open(JSON.parse(button.dataset.moduleEdit))));
             this.input('TypeId').addEventListener('change', () => this.configuration.apply());
             this.input('HostId').addEventListener('change', () => {
                 const remote = this.configuration.current.remote;
@@ -211,24 +211,20 @@
             this.form.querySelector('[data-module-form-error]')?.remove();
             this.form.querySelectorAll('.input-validation-error').forEach(input => input.classList.remove('input-validation-error'));
             this.setMode(Boolean(data));
-            const mapping = {
-                Id: 'moduleId', Name: 'moduleName', Description: 'moduleDescription', HostId: 'moduleHostId',
-                TypeId: 'moduleTypeId', HealthCheckUrl: 'moduleHealthUrl', ManagementUrl: 'moduleManagementUrl',
-                ContainerId: 'moduleContainerId', ServiceName: 'moduleServiceName',
-                MinecraftServerAddress: 'moduleMinecraftAddress', MinecraftServerPort: 'moduleMinecraftPort',
-                SteamServerAddress: 'moduleSteamAddress', SteamQueryPort: 'moduleSteamPort'
-            };
             const defaults = { Id: '0', MinecraftServerPort: '25565', SteamQueryPort: '27015' };
-            for (const [name, key] of Object.entries(mapping)) {
+            for (const input of this.form.querySelectorAll('[name^="Module."]')) {
+                const name = input.name.slice('Module.'.length);
+                const key = name[0].toLowerCase() + name.slice(1);
                 if (name === 'TypeId' && !data) continue;
-                const value = data?.[key] || defaults[name] || '';
+                if (name === 'IsEnabled' || name === 'SteamQueryPlayers') {
+                    if (input.type === 'checkbox') input.checked = data?.[key] ?? name === 'IsEnabled';
+                    continue;
+                }
+                const value = data?.[key] ?? defaults[name] ?? '';
                 if (name === 'ContainerId' || name === 'ServiceName')
-                    this.input(name).replaceChildren(new Option('Select an option', value, true, true));
-                this.input(name).value = value;
+                    input.replaceChildren(new Option('Select an option', value, true, true));
+                input.value = value;
             }
-            // Checkbox tag helpers also emit a hidden input with the same name.
-            document.getElementById('Module_IsEnabled').checked = !data || data.moduleEnabled === 'true';
-            document.getElementById('Module_SteamQueryPlayers').checked = data?.moduleSteamPlayers === 'true';
             this.configuration.apply();
             this.form.querySelectorAll('select[data-searchable-select]').forEach(refreshSelect);
         }

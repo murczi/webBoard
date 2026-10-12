@@ -27,13 +27,7 @@ public sealed class MonitoringCollector(WebboardDbContext db, IModuleHealthCheck
         var latest = await db.LatestMonitoring.SingleOrDefaultAsync(x => x.ModuleId == moduleId, token);
         var now = timeProvider.GetUtcNow();
         if (latest is not null && latest.ConfigurationRevision == module.DateUpdated && latest.Timestamp > now.AddSeconds(-options.IntervalSeconds)) return;
-        var model = new ModuleModel {
-            Id = module.Id, Name = module.FriendlyName, TypeId = module.TypeId, TypeName = module.Type?.Name ?? "",
-            HostId = module.HostId, HostExists = module.Host != null, HostIsEnabled = module.Host?.IsEnabled == true, HostIsDeleted = module.Host?.DeletionFlag == true, HostName = module.Host?.Name, HostAgentBaseUrl = module.Host?.AgentBaseUrl,
-            HealthCheckUrl = module.HealthCheckUrl, ContainerId = module.ContainerId, ServiceName = module.ServiceName,
-            MinecraftServerAddress = module.MinecraftServerAddress, MinecraftServerPort = module.MinecraftServerPort,
-            SteamServerAddress = module.SteamServerAddress, SteamQueryPort = module.SteamQueryPort, SteamQueryPlayers = module.SteamQueryPlayers, IsEnabled = true
-        };
+        var model = ModuleProjection.ToModel(module);
         ModuleHealthResult result;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));

@@ -14,31 +14,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         await dbContext.Modules.AsNoTracking()
             .Where(module => !module.DeletionFlag)
             .OrderBy(module => module.FriendlyName)
-            .Select(module => new ModuleModel
-            {
-                Id = module.Id,
-                TypeId = module.TypeId,
-                TypeName = module.Type != null ? module.Type.Name : string.Empty,
-                HostId = module.HostId,
-                HostExists = module.Host != null, HostIsEnabled = module.Host != null && module.Host.IsEnabled,
-                HostIsDeleted = module.Host != null && module.Host.DeletionFlag,
-                HostName = module.Host != null ? module.Host.Name : null,
-                HostAgentBaseUrl = module.Host != null ? module.Host.AgentBaseUrl : null,
-                Name = module.FriendlyName,
-                Description = module.Description,
-                HealthCheckUrl = module.HealthCheckUrl,
-                ContainerId = module.ContainerId,
-                ServiceName = module.ServiceName,
-                MinecraftServerAddress = module.MinecraftServerAddress,
-                MinecraftServerPort = module.MinecraftServerPort,
-                SteamServerAddress = module.SteamServerAddress,
-                SteamQueryPort = module.SteamQueryPort,
-                SteamQueryPlayers = module.SteamQueryPlayers,
-                ManagementUrl = module.ManagementUrl,
-                IsEnabled = module.IsEnabled,
-                DateCreated = module.DateCreated,
-                DateUpdated = module.DateUpdated
-            })
+            .Select(ModuleProjection.Read)
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<ModuleOptionModel>> GetHostsAsync(CancellationToken cancellationToken = default) =>
@@ -68,26 +44,7 @@ public class ModuleRepository(WebboardDbContext dbContext) : IModuleRepository {
         int actorId,
         string auditComment,
         CancellationToken cancellationToken = default) {
-        var entity = new ModuleEntity
-        {
-            TypeId = module.TypeId,
-            HostId = module.HostId,
-            FriendlyName = module.Name,
-            Description = module.Description,
-            HealthCheckUrl = module.HealthCheckUrl,
-            ContainerId = module.ContainerId,
-            ServiceName = module.ServiceName,
-            MinecraftServerAddress = module.MinecraftServerAddress,
-            MinecraftServerPort = module.MinecraftServerPort,
-            SteamServerAddress = module.SteamServerAddress,
-            SteamQueryPort = module.SteamQueryPort,
-            SteamQueryPlayers = module.SteamQueryPlayers,
-            ManagementUrl = module.ManagementUrl,
-            DeletionFlag = false,
-            IsEnabled = module.IsEnabled,
-            DateCreated = module.DateCreated,
-            DateUpdated = module.DateUpdated
-        };
+        var entity = ModuleProjection.ToEntity(module);
         dbContext.Modules.Add(entity);
         dbContext.AuditLogs.Add(new AuditLogEntity
         {
