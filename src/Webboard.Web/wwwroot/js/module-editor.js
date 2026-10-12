@@ -104,13 +104,19 @@
                 }
                 const items = await response.json();
                 if (this.request !== request) return;
+                // Older modules saved Docker IDs. Convert a discoverable ID to its
+                // stable name when editing, so the next save survives recreation.
+                if (selected && this.settings.legacyValue && !items.some(item => this.settings.value(item) === selected)) {
+                    const previous = items.find(item => this.settings.legacyValue(item) === selected);
+                    if (previous) selected = this.settings.value(previous);
+                }
                 this.select.replaceChildren(new Option(`Select a ${this.name}`, ''));
                 for (const item of items) this.select.add(new Option(this.settings.label(item), this.settings.value(item)));
                 if (selected && !items.some(item => this.settings.value(item) === selected))
                     this.select.add(new Option(`Previously selected ${this.name} (not currently found)`, selected));
                 this.select.value = selected;
                 this.select.disabled = false;
-                this.help.textContent = items.length ? `${this.settings.title} loaded live from the selected host.`
+                this.help.textContent = items.length ? this.settings.help || `${this.settings.title} loaded live from the selected host.`
                     : `No ${this.settings.plural} were found on this host.`;
             } catch (error) {
                 if (this.request !== request || error.name === 'AbortError') return;
@@ -137,7 +143,10 @@
             this.loaders = {
                 container: new RemoteModuleOptions(this, 'container', {
                     input: 'ContainerId', url: form.dataset.containersUrl, plural: 'containers', title: 'Containers', agent: 'Docker',
-                    value: item => item.id, label: item => `${item.name} — ${item.image} (${item.status})`
+                    // The agent accepts names as well as IDs for status and controls.
+                    value: item => item.name, legacyValue: item => item.id,
+                    help: 'Containers are tracked by name, so updates that recreate them keep the connection.',
+                    label: item => `${item.name} — ${item.image} (${item.status})`
                 }),
                 service: new RemoteModuleOptions(this, 'service', {
                     input: 'ServiceName', url: form.dataset.servicesUrl, plural: 'services', title: 'Services', agent: 'systemd',

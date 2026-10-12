@@ -93,7 +93,7 @@ public class ModuleManagementService(IModuleRepository repository) : IModuleMana
             if (module.ContainerId is null)
                 throw new ArgumentException("Select a Docker container.", nameof(module));
             if (module.ContainerId.Length > 128)
-                throw new ArgumentException("Docker container ID cannot exceed 128 characters.", nameof(module));
+                throw new ArgumentException("Docker container name or ID cannot exceed 128 characters.", nameof(module));
         }
         else if (string.Equals(typeName, "Systemd", StringComparison.OrdinalIgnoreCase)) {
             module.HealthCheckUrl = null;

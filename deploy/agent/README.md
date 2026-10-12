@@ -363,6 +363,13 @@ and allowlists. Use `docker compose stop agent` to stop monitoring on this host.
 
 ## Troubleshooting
 
+Docker modules selected in the editor are saved by container name, so monitoring
+and controls reconnect after a container is recreated with the same name on the
+same host. Existing modules saved by ID are converted when you open their editor
+and save while the original container is still discoverable. If it has already
+been removed, reselect the replacement container and save once. Use container
+names in the Docker controls allowlist to keep controls available after updates.
+
 - **Startup fails:** fill the token and certificate password, check that the PFX exists and is readable by the container UID, and review agent logs.
 - **Port bind fails:** use an IP assigned to this host and an unused host port.
 - **Health probe returns 401:** use a configured bearer token; `/health` also requires authentication.

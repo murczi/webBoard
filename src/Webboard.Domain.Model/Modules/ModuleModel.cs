@@ -10,6 +10,7 @@ public class ModuleModel {
     public required string Name { get; set; }
     public string? Description { get; set; }
     public string? HealthCheckUrl { get; set; }
+    // Docker name for stable tracking; legacy modules may still contain an ID.
     public string? ContainerId { get; set; }
     public string? ServiceName { get; set; }
     public string? MinecraftServerAddress { get; set; }
